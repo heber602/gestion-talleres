@@ -22,8 +22,8 @@ export default function ForgotPasswordPage() {
       if (res.devToken) {
         setDevToken(res.devToken);
       }
-    } catch (err: any) {
-      setError(err.message || "Ocurrió un error.");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Ocurrió un error.");
     } finally {
       setLoading(false);
     }

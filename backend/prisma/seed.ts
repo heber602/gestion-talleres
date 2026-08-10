@@ -43,7 +43,7 @@ async function main() {
     {
       name: 'Carlos Lopez',
       email: 'mecanico@taller2r.com',
-      role: 'mechanic',
+      role: 'employee',
       password: '1234',
     },
   ];

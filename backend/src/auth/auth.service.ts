@@ -572,6 +572,8 @@ export class AuthService {
       throw new ForbiddenException('Solo el dueno puede administrar invitaciones.');
     }
 
+    await this.ensureAdminTables();
+
     return this.prisma.$queryRaw<StaffInviteRow[]>`
       SELECT
         si.id,
@@ -1727,7 +1729,30 @@ export class AuthService {
     await this.prisma.$executeRawUnsafe(`
       CREATE INDEX IF NOT EXISTS "PlanChangeRequest_status_idx" ON "PlanChangeRequest"(status);
     `);
+    await this.prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "StaffInvite" (
+        "id" TEXT NOT NULL,
+        "tenantId" TEXT NOT NULL REFERENCES "Tenant"("id") ON DELETE CASCADE,
+        "email" TEXT NOT NULL,
+        "name" TEXT NOT NULL,
+        "role" TEXT NOT NULL,
+        "tokenHash" TEXT NOT NULL,
+        "invitedByUserId" TEXT NOT NULL REFERENCES "User"("id") ON DELETE CASCADE,
+        "status" TEXT NOT NULL DEFAULT 'pending',
+        "expiresAt" TIMESTAMP(3) NOT NULL,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "acceptedAt" TIMESTAMP(3) NULL,
+        CONSTRAINT "StaffInvite_pkey" PRIMARY KEY ("id")
+      );
+    `);
+    await this.prisma.$executeRawUnsafe(`
+      CREATE UNIQUE INDEX IF NOT EXISTS "StaffInvite_tokenHash_key" ON "StaffInvite"("tokenHash");
+    `);
+    await this.prisma.$executeRawUnsafe(`
+      CREATE INDEX IF NOT EXISTS "StaffInvite_tenantId_idx" ON "StaffInvite"("tenantId");
+    `);
   }
+
 
   private assertSuperadmin(viewer: SessionUser) {
     if (viewer.audience !== 'staff' || viewer.role !== 'superadmin') {

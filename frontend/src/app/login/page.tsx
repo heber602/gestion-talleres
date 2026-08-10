@@ -6,19 +6,16 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth, UserRole } from "@/context/AuthContext";
 import { API_BASE_URL } from "@/lib/auth-api";
 import type { TenantChoice } from "@/lib/auth-api";
+import { useI18n } from "@/context/I18nContext";
+import { LocaleSwitcher } from "@/components/LocaleSwitcher";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-const VALUE_PROPS = [
-  "Turnos y clientes organizados",
-  "Control de inventario en tiempo real",
-  "Facturación automática",
-];
 
 export default function LoginPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { login } = useAuth();
+  const { t } = useI18n();
   const googleErrorParam = searchParams.get("googleError");
 
   const [pageReady, setPageReady] = useState(false);
@@ -32,6 +29,8 @@ export default function LoginPage() {
   const [errorMessage, setErrorMessage] = useState("");
   const [tenantChoices, setTenantChoices] = useState<TenantChoice[]>([]);
   const [touched, setTouched] = useState({ email: false, password: false });
+
+  const valueProps = [t("login", "value1"), t("login", "value2"), t("login", "value3")];
 
   useEffect(() => {
     const timer = setTimeout(() => setPageReady(true), 220);
@@ -54,17 +53,17 @@ export default function LoginPage() {
 
   const emailError = useMemo(() => {
     if (!touched.email) return "";
-    if (!email.trim()) return "El correo electrónico es obligatorio.";
-    if (!EMAIL_REGEX.test(email.trim())) return "El email no es válido.";
+    if (!email.trim()) return t("login", "validEmailRequired");
+    if (!EMAIL_REGEX.test(email.trim())) return t("login", "invalidEmail");
     return "";
-  }, [email, touched.email]);
+  }, [email, touched.email, t]);
 
   const passwordError = useMemo(() => {
     if (!touched.password) return "";
-    if (!password.trim()) return "La contraseña es obligatoria.";
-    if (password.length < 6) return "La contraseña debe tener al menos 6 caracteres.";
+    if (!password.trim()) return t("login", "passwordRequired");
+    if (password.length < 6) return t("login", "passwordLength");
     return "";
-  }, [password, touched.password]);
+  }, [password, touched.password, t]);
 
   const isFormValid =
     EMAIL_REGEX.test(email.trim()) &&
@@ -84,7 +83,7 @@ export default function LoginPage() {
     setTenantChoices([]);
 
     if (!isFormValid) {
-      setErrorMessage("Revisá los datos ingresados para continuar.");
+      setErrorMessage(t("login", "invalidData"));
       return;
     }
 
@@ -101,14 +100,14 @@ export default function LoginPage() {
       if (!rememberMe) {
         localStorage.removeItem("81cc_session_token");
       }
-      setSuccessMessage("Acceso correcto. Redirigiendo...");
+      setSuccessMessage(t("login", "loginSuccess"));
       setTimeout(() => {
         redirectByRole(email.toLowerCase().trim() === "herber.superadmin@81cc.app" ? "superadmin" : "owner");
       }, 260);
       return;
     }
 
-    setErrorMessage(result.error ?? "No se pudo iniciar sesión.");
+    setErrorMessage(result.error ?? t("login", "loginFailed"));
   };
 
   const handleTenantSelection = async (tenantId: string) => {
@@ -119,12 +118,12 @@ export default function LoginPage() {
     setLoading(false);
 
     if (result.success) {
-      setSuccessMessage("Sesión iniciada. Redirigiendo...");
+      setSuccessMessage(t("login", "sessionStarted"));
       setTimeout(() => redirectByRole("owner"), 260);
       return;
     }
 
-    setErrorMessage(result.error ?? "No se pudo iniciar sesión en el taller seleccionado.");
+    setErrorMessage(result.error ?? t("login", "loginFailedSelectedShop"));
   };
 
   const handleGoogleLogin = () => {
@@ -164,14 +163,14 @@ export default function LoginPage() {
           <div className="pointer-events-none absolute -bottom-16 left-8 h-56 w-56 rounded-full bg-white/10 blur-3xl" />
 
           <h1 className="max-w-xl text-3xl font-semibold leading-tight sm:text-4xl lg:text-5xl">
-            Gestión de taller simplificada
+            {t("login", "heroTitle")}
           </h1>
           <p className="mt-4 max-w-xl text-sm leading-relaxed text-white/85 sm:text-base">
-            81cc centraliza turnos, inventario, clientes y facturación para que tomes decisiones con información en tiempo real.
+            {t("login", "heroDescription")}
           </p>
 
           <ul className="mt-6 space-y-3">
-            {VALUE_PROPS.map((item) => (
+            {valueProps.map((item) => (
               <li key={item} className="flex items-start gap-3 rounded-xl border border-white/15 bg-white/10 px-4 py-3">
                 <CheckIcon />
                 <span className="text-sm font-medium text-white sm:text-base">{item}</span>
@@ -180,52 +179,55 @@ export default function LoginPage() {
           </ul>
 
           <div className="mt-7 rounded-xl border border-white/15 bg-[#190B47]/70 p-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#8A8A80]">Vista de dashboard</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#8A8A80]">{t("login", "dashboardPreview")}</p>
             <div className="mt-3 grid gap-2 sm:grid-cols-3">
               <div className="rounded-lg border border-white/15 bg-white/10 p-3">
-                <p className="text-xs text-white/75">Turnos de hoy</p>
+                <p className="text-xs text-white/75">{t("login", "shiftsOfDay")}</p>
                 <p className="mt-1 text-xl font-semibold">18</p>
               </div>
               <div className="rounded-lg border border-white/15 bg-white/10 p-3">
-                <p className="text-xs text-white/75">OT activas</p>
+                <p className="text-xs text-white/75">{t("login", "activeWorkOrders")}</p>
                 <p className="mt-1 text-xl font-semibold">11</p>
               </div>
               <div className="rounded-lg border border-white/15 bg-white/10 p-3">
-                <p className="text-xs text-white/75">Facturado</p>
+                <p className="text-xs text-white/75">{t("login", "billed")}</p>
                 <p className="mt-1 text-xl font-semibold">$2.4M</p>
               </div>
             </div>
           </div>
 
           <blockquote className="mt-6 rounded-xl border border-[#474211] bg-[#474211]/15 p-4 text-sm leading-relaxed text-white">
-            &quot;Pasé de Excel a 81cc y recuperé 5 horas por semana&quot; - Carlos M., Taller San Martín
+            {t("login", "testimonial")}
           </blockquote>
 
           <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-4 py-2 text-xs font-semibold text-white">
             <span className="inline-block h-2 w-2 rounded-full bg-[#FFE707]" aria-hidden="true" />
-            Datos seguros y encriptados
+            {t("login", "encryptedData")}
           </div>
         </section>
 
         <section className="login-fade-in order-2 rounded-2xl border border-white/15 bg-[#2400A2] p-6 shadow-[0_18px_55px_rgba(3,1,18,0.35)] lg:order-1 lg:col-span-2 lg:p-8">
-          <Link href="/" className="inline-flex items-center text-2xl font-bold tracking-tight text-white">
-            <span className="logo-pulse">81</span>
-            <span className="text-[#FFE707]">cc</span>
-          </Link>
-          <h2 className="mt-5 text-2xl font-semibold text-white">Bienvenido a 81cc</h2>
-          <p className="mt-2 text-sm text-[#8A8A80]">Plataforma integral para talleres mecánicos</p>
+          <div className="flex items-center justify-between gap-3">
+            <Link href="/" className="inline-flex items-center text-2xl font-bold tracking-tight text-white">
+              <span className="logo-pulse">81</span>
+              <span className="text-[#FFE707]">cc</span>
+            </Link>
+            <LocaleSwitcher />
+          </div>
+          <h2 className="mt-5 text-2xl font-semibold text-white">{t("login", "welcomeTitle")}</h2>
+          <p className="mt-2 text-sm text-[#8A8A80]">{t("login", "welcomeSubtitle")}</p>
 
           <form onSubmit={handleSubmit} className="mt-6 space-y-4" noValidate>
             <div>
               <label htmlFor="email" className="mb-1.5 block text-sm font-medium text-white">
-                Correo electrónico
+                {t("login", "email")}
               </label>
               <input
                 id="email"
                 name="email"
                 type="email"
                 autoComplete="email"
-                aria-label="Correo electrónico"
+                aria-label={t("login", "email")}
                 aria-invalid={Boolean(emailError)}
                 aria-describedby={emailError ? "email-error" : undefined}
                 value={email}
@@ -249,10 +251,10 @@ export default function LoginPage() {
             <div>
               <div className="mb-1.5 flex items-center justify-between">
                 <label htmlFor="password" className="block text-sm font-medium text-white">
-                  Contraseña
+                  {t("login", "password")}
                 </label>
                 <Link href="/forgot-password" className="text-xs font-medium text-[#8A8A80] hover:text-white">
-                  ¿Olvidaste tu contraseña?
+                  {t("login", "forgotPassword")}
                 </Link>
               </div>
               <div className="relative">
@@ -261,7 +263,7 @@ export default function LoginPage() {
                   name="password"
                   type={showPassword ? "text" : "password"}
                   autoComplete="current-password"
-                  aria-label="Contraseña"
+                  aria-label={t("login", "password")}
                   aria-invalid={Boolean(passwordError)}
                   aria-describedby={passwordError ? "password-error" : undefined}
                   value={password}
@@ -270,18 +272,18 @@ export default function LoginPage() {
                     setPassword(event.target.value);
                     setErrorMessage("");
                   }}
-                  placeholder="Ingresa tu contraseña"
+                  placeholder={t("login", "passwordPlaceholder")}
                   className={`h-11 w-full rounded-lg border bg-[#190B47]/65 px-3 pr-16 text-sm text-white outline-none transition focus:ring-2 focus:ring-[#FFE707]/30 ${
                     passwordError ? "border-red-300 focus:border-red-300" : "border-[#8A8A80]/45 focus:border-[#FFE707]"
                   }`}
                 />
                 <button
                   type="button"
-                  aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
+                  aria-label={showPassword ? t("login", "hide") : t("login", "show")}
                   onClick={() => setShowPassword((prev) => !prev)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-[#8A8A80] transition hover:text-white"
                 >
-                  {showPassword ? "Ocultar" : "Ver"}
+                  {showPassword ? t("login", "hide") : t("login", "show")}
                 </button>
               </div>
               {passwordError ? (
@@ -298,7 +300,7 @@ export default function LoginPage() {
                 onChange={(event) => setRememberMe(event.target.checked)}
                 className="h-4 w-4 rounded border-[#8A8A80]/60 bg-transparent text-[#FFE707] focus:ring-[#FFE707]"
               />
-              Recordarme
+              {t("login", "rememberMe")}
             </label>
 
             {errorMessage || googleErrorParam ? (
@@ -314,8 +316,8 @@ export default function LoginPage() {
 
             {tenantChoices.length ? (
               <div className="rounded-lg border border-[#8A8A80]/40 bg-[#190B47]/60 p-3">
-                <p className="text-sm font-semibold text-white">Este usuario trabaja en varios talleres.</p>
-                <p className="mt-1 text-xs text-[#8A8A80]">Selecciona dónde quieres iniciar esta sesión.</p>
+                <p className="text-sm font-semibold text-white">{t("login", "multiWorkshopTitle")}</p>
+                <p className="mt-1 text-xs text-[#8A8A80]">{t("login", "multiWorkshopHint")}</p>
                 <div className="mt-2 space-y-2">
                   {tenantChoices.map((account) => (
                     <button
@@ -340,17 +342,17 @@ export default function LoginPage() {
               {loading ? (
                 <>
                   <span className="h-4 w-4 animate-spin rounded-full border-2 border-[#190B47]/30 border-t-[#190B47]" />
-                  Iniciando sesión...
+                  {t("login", "signingIn")}
                 </>
               ) : (
-                "Iniciar sesión"
+                t("login", "signIn")
               )}
             </button>
           </form>
 
           <div className="my-4 flex items-center gap-3">
             <span className="h-px flex-1 bg-[#8A8A80]/35" />
-            <span className="text-xs font-medium uppercase tracking-wide text-[#8A8A80]">o</span>
+            <span className="text-xs font-medium uppercase tracking-wide text-[#8A8A80]">{t("login", "or")}</span>
             <span className="h-px flex-1 bg-[#8A8A80]/35" />
           </div>
 
@@ -363,22 +365,22 @@ export default function LoginPage() {
             {googleLoading ? (
               <>
                 <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-                Redirigiendo a Google...
+                {t("login", "redirectingGoogle")}
               </>
             ) : (
-              "Continuar con Google"
+              t("login", "continueWithGoogle")
             )}
           </button>
 
           <div className="mt-5 space-y-2 text-sm">
             <p className="text-[#8A8A80]">
-              ¿No tenés cuenta?{" "}
+              {t("login", "noAccount")}{" "}
               <Link href="/registro" className="font-semibold text-[#FFE707] hover:text-white">
-                Crear cuenta
+                {t("login", "createAccount")}
               </Link>
             </p>
             <Link href="/portal" className="inline-block font-medium text-[#8A8A80] hover:text-white">
-              Ver portal de clientes
+              {t("login", "viewPortal")}
             </Link>
           </div>
         </section>

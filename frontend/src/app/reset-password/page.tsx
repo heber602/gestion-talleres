@@ -24,8 +24,8 @@ function ResetPasswordForm() {
     try {
       await submitPasswordReset(token, password);
       setSuccess(true);
-    } catch (err: any) {
-      setError(err.message || "No se pudo actualizar la contraseña.");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "No se pudo actualizar la contraseña.");
     } finally {
       setLoading(false);
     }

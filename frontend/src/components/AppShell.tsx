@@ -4,11 +4,14 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { useAuth, UserRole } from "@/context/AuthContext";
+import { useI18n } from "@/context/I18nContext";
+import { LocaleSwitcher } from "@/components/LocaleSwitcher";
 
-const NAV_ITEMS = [
+function getNavItems(t: ReturnType<typeof useI18n>["t"]) {
+  return [
   {
     href: "/",
-    label: "Dashboard",
+    label: t("shell", "dashboard"),
     roles: ["owner", "employee"] as UserRole[],
     icon: (
       <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -23,7 +26,7 @@ const NAV_ITEMS = [
   },
   {
     href: "/turnos",
-    label: "Turnos",
+    label: t("shell", "shifts"),
     roles: ["owner", "employee"] as UserRole[],
     icon: (
       <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -38,7 +41,7 @@ const NAV_ITEMS = [
   },
   {
     href: "/ordenes",
-    label: "Órdenes",
+    label: t("shell", "orders"),
     roles: ["owner", "employee"] as UserRole[],
     icon: (
       <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -53,7 +56,7 @@ const NAV_ITEMS = [
   },
   {
     href: "/clientes",
-    label: "Directorio",
+    label: t("shell", "directory"),
     roles: ["owner", "employee"] as UserRole[],
     icon: (
       <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -68,7 +71,7 @@ const NAV_ITEMS = [
   },
   {
     href: "/finanzas",
-    label: "Finanzas",
+    label: t("shell", "finance"),
     roles: ["owner"] as UserRole[],
     icon: (
       <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -83,7 +86,7 @@ const NAV_ITEMS = [
   },
   {
     href: "/equipo",
-    label: "Equipo",
+    label: t("shell", "team"),
     roles: ["owner"] as UserRole[],
     icon: (
       <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -98,7 +101,7 @@ const NAV_ITEMS = [
   },
   {
     href: "/cuenta",
-    label: "Cuenta",
+    label: t("shell", "account"),
     roles: ["owner"] as UserRole[],
     icon: (
       <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -113,7 +116,7 @@ const NAV_ITEMS = [
   },
   {
     href: "/sesiones",
-    label: "Sesiones",
+    label: t("shell", "sessions"),
     roles: ["owner", "superadmin"] as UserRole[],
     icon: (
       <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -127,12 +130,7 @@ const NAV_ITEMS = [
     ),
   },
 ];
-
-const ROLE_LABEL: Record<UserRole, string> = {
-  owner: "Dueño / Admin",
-  employee: "Empleado",
-  superadmin: "Super Admin",
-};
+}
 
 const ROLE_COLOR: Record<UserRole, string> = {
   owner: "border border-[#FFE707]/45 bg-[#FFE707]/14 text-white",
@@ -144,8 +142,15 @@ function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const { user, logout } = useAuth();
+  const { t } = useI18n();
+  const navItems = getNavItems(t);
 
-  const visibleItems = NAV_ITEMS.filter((item) => user && item.roles.includes(user.role));
+  const visibleItems = navItems.filter((item) => user && item.roles.includes(user.role));
+  const roleLabel: Record<UserRole, string> = {
+    owner: t("shell", "ownerAdmin"),
+    employee: t("shell", "employee"),
+    superadmin: t("shell", "superAdmin"),
+  };
 
   const handleLogout = () => {
     logout();
@@ -164,9 +169,11 @@ function Sidebar() {
       </Link>
 
       <div className="mb-5 rounded-2xl border border-white/12 bg-[#190B47]/60 p-3">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#8A8A80]">Taller activo</p>
-        <p className="mt-2 text-sm font-semibold text-white">{user?.tenantId ? "Espacio operativo conectado" : "Cuenta lista"}</p>
-        <p className="mt-1 text-xs text-white/80">Turnos, órdenes, clientes y caja en una sola consola.</p>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#8A8A80]">{t("shell", "activeWorkshop")}</p>
+        <p className="mt-2 text-sm font-semibold text-white">
+          {user?.tenantId ? t("shell", "connectedWorkspace") : t("shell", "accountReady")}
+        </p>
+        <p className="mt-1 text-xs text-white/80">{t("shell", "shellSummary")}</p>
       </div>
 
       <div className="flex-1 space-y-1.5 overflow-y-auto pb-3 font-medium">
@@ -197,7 +204,7 @@ function Sidebar() {
           <div className="min-w-0 flex-1 text-sm">
             <div className="truncate font-semibold text-white">{user?.name}</div>
             <span className={`rounded-full px-2 py-1 text-[10px] font-bold ${user ? ROLE_COLOR[user.role] : ""}`}>
-              {user ? ROLE_LABEL[user.role] : ""}
+              {user ? roleLabel[user.role] : ""}
             </span>
           </div>
         </div>
@@ -214,8 +221,11 @@ function Sidebar() {
               d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
             />
           </svg>
-          Cerrar sesión
+          {t("shell", "logout")}
         </button>
+      </div>
+      <div className="mt-3">
+        <LocaleSwitcher />
       </div>
     </nav>
   );
@@ -224,8 +234,10 @@ function Sidebar() {
 function MobileNav() {
   const pathname = usePathname();
   const { user } = useAuth();
+  const { t } = useI18n();
+  const navItems = getNavItems(t);
 
-  const mobileItems = NAV_ITEMS.filter((item) => user && item.roles.includes(user.role));
+  const mobileItems = navItems.filter((item) => user && item.roles.includes(user.role));
 
   return (
     <nav className="panel-shell fixed bottom-0 z-50 flex w-full gap-2 overflow-x-auto border-t border-white/12 bg-[#190B47] p-2 pb-safe backdrop-blur md:hidden">

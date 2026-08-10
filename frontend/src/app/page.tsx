@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
+import { useI18n } from "@/context/I18nContext";
 import {
   fetchDashboardSummary,
   fetchOwnerAccountStatus,
@@ -14,6 +15,7 @@ import {
 export default function Home() {
   const router = useRouter();
   const { user } = useAuth();
+  const { t } = useI18n();
   const [data, setData] = useState<DashboardResponse | null>(null);
   const [accountStatus, setAccountStatus] = useState<OwnerAccountStatus | null>(null);
   const [error, setError] = useState("");
@@ -54,20 +56,20 @@ export default function Home() {
 
   const summaryText = useMemo(() => {
     if (!data?.recentAppointments.length) {
-      return "Todavía no hay turnos cargados para hoy.";
+      return t("dashboard", "noShiftsToday");
     }
-    return `${data.recentAppointments.length} movimientos recientes listos para seguimiento.`;
-  }, [data]);
+    return `${data.recentAppointments.length} ${t("dashboard", "recentMovements")}`;
+  }, [data, t]);
 
   return (
     <div className="mx-auto max-w-7xl p-4 pb-24 sm:p-6 md:p-8 md:pb-8">
       <header className="mb-6 overflow-hidden rounded-2xl border border-white/15 bg-[linear-gradient(145deg,#2400A2_0%,#190B47_70%)] p-5 shadow-[0_18px_40px_rgba(7,3,24,0.35)] sm:p-7">
-        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[#8A8A80]">Operación diaria</p>
+        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[#8A8A80]">{t("dashboard", "operationLabel")}</p>
         <h1 className="mt-2 text-2xl font-extrabold text-white sm:text-3xl">
-          Bienvenido, <span className="text-[#FFE707]">{firstName}</span>
+          {t("dashboard", "welcome")}, <span className="text-[#FFE707]">{firstName}</span>
         </h1>
         <p className="mt-3 max-w-2xl text-sm leading-relaxed text-white/85 sm:text-base">
-          Controla el estado del taller, los turnos y las órdenes activas desde una única vista clara.
+          {t("dashboard", "headerDescription")}
         </p>
         <div className="mt-4 rounded-xl border border-[#474211]/60 bg-[#474211]/20 px-4 py-3 text-sm text-white/90">
           {summaryText}
@@ -83,36 +85,38 @@ export default function Home() {
       {user?.role === "owner" && accountStatus?.pendingPlanRequest ? (
         <div className="mb-6 flex flex-col gap-3 rounded-xl border border-sky-300/30 bg-sky-50 px-4 py-3 text-sm text-sky-900 sm:flex-row sm:items-center sm:justify-between">
           <p>
-            Tu solicitud de plan <strong>{accountStatus.pendingPlanRequest.requestedPlanCode.toUpperCase()}</strong> está en revisión por 81cc.
+            {t("dashboard", "reviewMessageStart")}{" "}
+            <strong>{accountStatus.pendingPlanRequest.requestedPlanCode.toUpperCase()}</strong>{" "}
+            {t("dashboard", "reviewMessageEnd")}
           </p>
           <button
             type="button"
             onClick={() => router.push("/cuenta")}
             className="rounded-lg border border-sky-500/30 bg-white px-3 py-1.5 font-semibold text-sky-700 transition hover:bg-sky-100"
           >
-            Ver estado de cuenta
+            {t("dashboard", "accountStatus")}
           </button>
         </div>
       ) : null}
 
       <section className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        <StatCard label="Turnos de hoy" value={stats.appointmentsToday} accent="Agenda" />
-        <StatCard label="Vehículos en taller" value={stats.vehiclesInWorkshop} accent="En proceso" />
-        <StatCard label="Órdenes activas" value={stats.activeOrders} accent="Seguimiento" />
+        <StatCard label={t("dashboard", "shiftsToday")} value={stats.appointmentsToday} accent={t("dashboard", "agenda")} />
+        <StatCard label={t("dashboard", "vehiclesInShop")} value={stats.vehiclesInWorkshop} accent={t("dashboard", "inProcess")} />
+        <StatCard label={t("dashboard", "activeOrders")} value={stats.activeOrders} accent={t("dashboard", "tracking")} />
       </section>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.2fr_0.8fr]">
         <section className="rounded-2xl border border-white/12 bg-[#2400A2]/80 shadow-[0_18px_38px_rgba(7,3,24,0.26)]">
           <div className="flex items-center justify-between border-b border-white/10 p-4 sm:p-5">
             <div>
-              <h2 className="text-lg font-bold text-white">Próximos turnos</h2>
-              <p className="text-sm text-[#8A8A80]">Últimos movimientos de la agenda</p>
+              <h2 className="text-lg font-bold text-white">{t("dashboard", "upcomingShifts")}</h2>
+              <p className="text-sm text-[#8A8A80]">{t("dashboard", "latestMovements")}</p>
             </div>
             <button
               onClick={() => router.push("/turnos")}
               className="rounded-lg bg-[#FFE707] px-3 py-2 text-sm font-semibold text-[#190B47] transition hover:brightness-95"
             >
-              Ver turnos
+              {t("dashboard", "viewShifts")}
             </button>
           </div>
 
@@ -131,34 +135,34 @@ export default function Home() {
               </article>
             ))}
             {!data?.recentAppointments.length ? (
-              <div className="p-4 text-sm text-[#8A8A80] sm:p-5">Todavía no hay turnos cargados.</div>
+              <div className="p-4 text-sm text-[#8A8A80] sm:p-5">{t("dashboard", "noShiftsLoaded")}</div>
             ) : null}
           </div>
         </section>
 
         <section className="rounded-2xl border border-white/12 bg-[#2400A2]/80 p-4 shadow-[0_18px_38px_rgba(7,3,24,0.26)] sm:p-5">
-          <h2 className="text-lg font-bold text-white">Acciones rápidas</h2>
-          <p className="mt-2 text-sm text-[#8A8A80]">Tareas frecuentes para la operación diaria.</p>
+          <h2 className="text-lg font-bold text-white">{t("dashboard", "quickActions")}</h2>
+          <p className="mt-2 text-sm text-[#8A8A80]">{t("dashboard", "quickActionsHint")}</p>
           <div className="mt-4 space-y-3">
             <ActionButton
-              label="Registrar ingreso"
-              hint="Alta de cliente, vehículo y turno"
+              label={t("dashboard", "registerEntry")}
+              hint={t("dashboard", "registerEntryHint")}
               onClick={() => router.push("/clientes")}
             />
             <ActionButton
-              label="Gestionar órdenes"
-              hint="Actualizar estado y diagnóstico"
+              label={t("dashboard", "manageOrders")}
+              hint={t("dashboard", "manageOrdersHint")}
               onClick={() => router.push("/ordenes")}
             />
             <ActionButton
-              label="Portal clientes"
-              hint="Ver experiencia del cliente final"
+              label={t("dashboard", "customerPortal")}
+              hint={t("dashboard", "customerPortalHint")}
               onClick={() => router.push("/portal")}
             />
             {user?.role === "owner" ? (
               <ActionButton
-                label="Estado de cuenta"
-                hint="Plan contratado, vigencia y capacidad"
+                label={t("dashboard", "accountOverview")}
+                hint={t("dashboard", "accountOverviewHint")}
                 onClick={() => router.push("/cuenta")}
               />
             ) : null}

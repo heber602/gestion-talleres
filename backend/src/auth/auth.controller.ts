@@ -8,6 +8,7 @@ import {
   Req,
   Res,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import type { Request } from 'express';
 import type { Response } from 'express';
 import { AuthService } from './auth.service';
@@ -225,6 +226,8 @@ export class AuthController {
     }
   }
 
+  // Límite estricto: 5 intentos/minuto para prevenir fuerza bruta
+  @Throttle({ default: { ttl: 60000, limit: 5 } })
   @Post('login')
   login(@Body() body: LoginBody, @Req() request: Request) {
     return this.authService.loginWithCredentials(
@@ -238,6 +241,7 @@ export class AuthController {
     );
   }
 
+  @Throttle({ default: { ttl: 60000, limit: 5 } })
   @Post('register-owner')
   registerOwner(@Body() body: OwnerRegistrationBody) {
     return this.authService.registerOwner(body);
@@ -248,6 +252,7 @@ export class AuthController {
     return this.authService.registerClient(body);
   }
 
+  @Throttle({ default: { ttl: 60000, limit: 5 } })
   @Post('client/login')
   clientLogin(@Body() body: LoginBody, @Req() request: Request) {
     return this.authService.loginClient(body.email, body.password, {
@@ -395,6 +400,7 @@ export class AuthController {
     return this.authService.moderateTenant(viewer, tenantId, request.body ?? {});
   }
 
+  @Throttle({ default: { ttl: 60000, limit: 3 } })
   @Post('forgot-password')
   forgotPassword(@Body() body: { email: string }) {
     return this.authService.forgotPassword(body.email);
