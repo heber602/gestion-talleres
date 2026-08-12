@@ -4,7 +4,7 @@ services:
     runtime: node
     plan: free
     # Migraciones en build (seguro), arranque limpio sin prisma
-    buildCommand: cd backend && npm ci && npx prisma generate && npx prisma migrate deploy && npm run build
+    buildCommand: cd backend && npm ci --include=dev && npx prisma generate && npx prisma migrate deploy && npm run build
     startCommand: cd backend && node dist/main
     envVars:
       # ⚠️ Configurar estos valores manualmente en el Dashboard de Render
