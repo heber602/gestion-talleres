@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   UnauthorizedException,
@@ -305,6 +306,15 @@ export class AuthService {
 
     const passwordHash = hashPassword(input.password);
     const knownClients = await this.findPortalClientsByEmail(email);
+    if (knownClients.some((candidate) => candidate.passwordHash)) {
+      throw new ForbiddenException('Este correo ya tiene acceso al portal. Iniciá sesión con tu contraseña.');
+    }
+    const existingVehicle = await this.prisma.vehicle.findUnique({
+      where: { tenantId_plate: { tenantId: tenant.id, plate: normalizedPlate } },
+    });
+    if (existingVehicle && !knownClients.some((candidate) => candidate.id === existingVehicle.clientId)) {
+      throw new ForbiddenException('La patente ya está asociada a otro cliente. Contactá al taller.');
+    }
     let client = knownClients.find((candidate) => candidate.tenantId === tenant.id) ?? null;
 
     if (!client) {
@@ -520,6 +530,9 @@ export class AuthService {
     if (viewer.audience !== 'staff' || !viewer.tenantId) {
       throw new UnauthorizedException('No autorizado.');
     }
+    if (!['owner', 'superadmin'].includes(viewer.role)) {
+      throw new ForbiddenException('Solo el dueño puede consultar las sesiones del taller.');
+    }
 
     return this.prisma.$queryRaw<
       Array<{
@@ -539,7 +552,7 @@ export class AuthService {
         s.email,
         s."createdAt" as "createdAt",
         s."lastSeenAt" as "lastSeenAt",
-        s.active
+        (s.active AND s."expiresAt" > NOW()) AS active
       FROM "Session" s
       LEFT JOIN "User" u ON u.id = s."userId"
       LEFT JOIN "Client" c ON c.id = s."clientId"
@@ -604,8 +617,8 @@ export class AuthService {
     }
 
     const normalizedEmail = input.email.toLowerCase().trim();
-    if (!['employee', 'superadmin'].includes(input.role)) {
-      throw new UnauthorizedException('Solo puedes invitar perfiles operativos o de soporte.');
+    if (input.role !== 'employee') {
+      throw new ForbiddenException('Solo podés invitar empleados del taller.');
     }
     const existing = await this.prisma.user.findFirst({
       where: {
@@ -689,6 +702,12 @@ export class AuthService {
 
   async acceptStaffInvite(input: { token: string; password: string }) {
     const invite = await this.readStaffInvite(input.token);
+    if (invite.role !== 'employee') {
+      throw new ForbiddenException('Esta invitación tiene un rol no permitido. Pedí una nueva al taller.');
+    }
+    if (input.password.length < 6) {
+      throw new BadRequestException('La contraseña debe tener al menos 6 caracteres.');
+    }
     const existing = await this.prisma.user.findFirst({
       where: {
         tenantId: invite.tenantId,
@@ -2069,6 +2088,9 @@ export class AuthService {
   }
 
   async forgotPassword(email: string) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new BadRequestException('La recuperación por correo todavía no está disponible. Contactá al administrador de 81cc.');
+    }
     const normalizedEmail = email.toLowerCase().trim();
     const users = await this.prisma.user.findMany({
       where: { email: normalizedEmail },
@@ -2098,6 +2120,9 @@ export class AuthService {
   }
 
   async resetPassword(token: string, newPassword: string) {
+    if (!token || typeof newPassword !== 'string' || newPassword.length < 6) {
+      throw new BadRequestException('El enlace y una contraseña de al menos 6 caracteres son obligatorios.');
+    }
     const users = await this.prisma.user.findMany({
       where: {
         resetPasswordToken: token,

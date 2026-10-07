@@ -27,6 +27,9 @@ export class SeedService implements OnModuleInit {
       if (tenants > 0) {
         return;
       }
+      if (process.env.NODE_ENV === 'production' && process.env.SEED_DEMO_DATA !== 'true') {
+        return;
+      }
 
       await this.seedDatabase();
       this.logger.log('Demo SQL seed completed with 3 workshops.');

@@ -5,6 +5,7 @@ target/
 !**/src/test/**/target/
 
 # Node.js
+/.local-test/
 **/node_modules/
 **/dist/
 **/.next/

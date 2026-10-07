@@ -31,8 +31,8 @@ export default function RegistroEquipoPage() {
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    if (password.length < 4) {
-      setError("La contrasena debe tener al menos 4 caracteres.");
+    if (password.length < 6) {
+      setError("La contraseña debe tener al menos 6 caracteres.");
       return;
     }
 
@@ -87,6 +87,8 @@ export default function RegistroEquipoPage() {
               Contrasena nueva
               <input
                 type="password"
+                required
+                minLength={6}
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 className="mt-1 w-full rounded-xl border border-gray-700 bg-gray-950 px-4 py-3 text-white outline-none transition focus:border-blue-500"
@@ -96,6 +98,8 @@ export default function RegistroEquipoPage() {
               Repetir contrasena
               <input
                 type="password"
+                required
+                minLength={6}
                 value={confirmPassword}
                 onChange={(event) => setConfirmPassword(event.target.value)}
                 className="mt-1 w-full rounded-xl border border-gray-700 bg-gray-950 px-4 py-3 text-white outline-none transition focus:border-blue-500"

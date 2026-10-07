@@ -47,7 +47,7 @@ function ResetPasswordForm() {
       <div className="mb-6 relative">
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#8A8A80]">Autenticación Segura</p>
         <h1 className="mt-2 text-3xl font-extrabold text-white">Nueva contraseña</h1>
-        <p className="mt-2 text-sm text-white/70">Escribe y guarda tu nueva contraseña para ingresar a Taller 2R.</p>
+        <p className="mt-2 text-sm text-white/70">Escribe y guarda tu nueva contraseña para ingresar a 81cc.</p>
       </div>
 
       {success ? (

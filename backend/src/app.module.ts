@@ -10,12 +10,12 @@ import { WorkshopModule } from './workshop/workshop.module';
 
 @Module({
   imports: [
-    // Rate limiting: máx 20 req por minuto globalmente (auth tiene más restricciones abajo)
+    // El uso normal del tablero realiza varias solicitudes por acción.
     ThrottlerModule.forRoot([
       {
         name: 'global',
         ttl: 60000,  // 1 minuto en ms
-        limit: 20,
+        limit: 120,
       },
     ]),
     PrismaModule,

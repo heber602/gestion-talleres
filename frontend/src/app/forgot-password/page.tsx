@@ -41,13 +41,13 @@ export default function ForgotPasswordPage() {
         <div className="mb-6 relative">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#8A8A80]">Recuperar Acceso</p>
           <h1 className="mt-2 text-3xl font-extrabold text-white">Olvidé mi contraseña</h1>
-          <p className="mt-2 text-sm text-white/70">Ingresa tu correo asociado y te enviaremos un enlace seguro para crear una nueva de forma inmediata.</p>
+          <p className="mt-2 text-sm text-white/70">Ingresá el correo asociado para consultar la recuperación de acceso. Si no está disponible, contactá al administrador de 81cc.</p>
         </div>
 
         {success ? (
           <div className="space-y-4">
             <div className="rounded-[1rem] border border-green-500/20 bg-green-500/10 p-4 text-sm leading-relaxed text-green-200">
-              Si tu correo está validado, recibirás un enlace mágico en pocos segundos.
+              Solicitud procesada. En desarrollo, el enlace de recuperación aparece debajo cuando la cuenta existe.
             </div>
             {devToken && (
               <div className="rounded-[1rem] border border-[#FFE707]/20 bg-[#FFE707]/10 p-4 text-xs font-mono text-[#FFE707] break-all">

@@ -23,6 +23,7 @@ model Tenant {
   workOrders     WorkOrder[]
   inventoryItems InventoryItem[]
   staffInvites   StaffInvite[]
+  vehicleTransfers VehicleOwnershipTransfer[]
 }
 
 model User {
@@ -40,6 +41,7 @@ model User {
   mechanicWorkOrders   WorkOrder[]   @relation("MechanicWorkOrders")
   sessions             Session[]
   staffInvites         StaffInvite[]
+  vehicleTransfers     VehicleOwnershipTransfer[] @relation("VehicleTransferActor")
 
   @@unique([tenantId, email])
 }
@@ -56,6 +58,8 @@ model Client {
   vehicles      Vehicle[]
   portalAccount ClientPortalAccount?
   sessions      Session[]
+  transfersFrom VehicleOwnershipTransfer[] @relation("VehicleTransferFrom")
+  transfersTo   VehicleOwnershipTransfer[] @relation("VehicleTransferTo")
 
   @@unique([tenantId, email])
 }
@@ -83,8 +87,31 @@ model Vehicle {
   updatedAt    DateTime      @updatedAt
   appointments Appointment[]
   workOrders   WorkOrder[]
+  ownershipTransfers VehicleOwnershipTransfer[]
 
   @@unique([tenantId, plate])
+}
+
+model VehicleOwnershipTransfer {
+  id                 String   @id @default(uuid())
+  tenantId           String
+  tenant             Tenant   @relation(fields: [tenantId], references: [id])
+  vehicleId          String
+  vehicle            Vehicle  @relation(fields: [vehicleId], references: [id])
+  fromClientId       String
+  fromClient         Client   @relation("VehicleTransferFrom", fields: [fromClientId], references: [id])
+  toClientId         String
+  toClient           Client   @relation("VehicleTransferTo", fields: [toClientId], references: [id])
+  fromClientName     String
+  toClientName       String
+  performedByUserId  String?
+  performedByUser    User?    @relation("VehicleTransferActor", fields: [performedByUserId], references: [id], onDelete: SetNull)
+  performedByName    String
+  note               String?  @db.Text
+  previousProfile    Json?
+  createdAt          DateTime @default(now())
+
+  @@index([tenantId, vehicleId, createdAt])
 }
 
 model Appointment {
@@ -197,4 +224,3 @@ model StaffInvite {
 
   @@index([tenantId])
 }
-

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useRouter } from "next/navigation";
+import { ArrowUpRight, Building2, CheckCircle2, CreditCard, FlaskConical, LayoutDashboard, LogOut, RefreshCw, Search, ShieldCheck, Users, Wallet } from "lucide-react";
 import {
   Bar,
   BarChart,
@@ -39,6 +40,23 @@ import {
 
 type TenantStatus = "active" | "suspended";
 type BillingCycle = "monthly" | "semiannual" | "annual";
+type AdminView = "overview" | "tenants" | "requests" | "finances" | "plans" | "users";
+const adminViews = [
+  { id: "overview", label: "Resumen", icon: LayoutDashboard },
+  { id: "tenants", label: "Talleres", icon: Building2 },
+  { id: "requests", label: "Solicitudes", icon: CreditCard },
+  { id: "finances", label: "Finanzas", icon: Wallet },
+  { id: "plans", label: "Planes", icon: ShieldCheck },
+  { id: "users", label: "Usuarios", icon: Users },
+] as const;
+const viewDescriptions: Record<AdminView, string> = {
+  overview: "",
+  tenants: "Buscá un taller y seleccioná su ficha para gestionar estado, contrato y renovaciones.",
+  requests: "Revisá quién pidió un cambio de plan y decidí si corresponde aprobarlo.",
+  finances: "Consultá los ingresos estimados por planes y la distribución de tu plataforma.",
+  plans: "Elegí un plan para editar su precio, capacidad y funciones incluidas.",
+  users: "Encontrá personas por nombre, rol o taller y consultá su último acceso.",
+};
 
 const inputClassName =
   "mt-1 w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-sm text-white outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-500/15";
@@ -54,6 +72,12 @@ export default function SuperAdminPage() {
   const { user, logout } = useAuth();
   const router = useRouter();
   const didInit = useRef(false);
+  const [view, setView] = useState<AdminView>("overview");
+  const [loading, setLoading] = useState(true);
+  const [notice, setNotice] = useState("");
+  const [tenantSearch, setTenantSearch] = useState("");
+  const [tenantStatusFilter, setTenantStatusFilter] = useState("all");
+  const [showCreateAdmin, setShowCreateAdmin] = useState(false);
 
   const [tenants, setTenants] = useState<SuperadminTenant[]>([]);
   const [users, setUsers] = useState<SuperadminUser[]>([]);
@@ -100,12 +124,15 @@ export default function SuperAdminPage() {
   });
   const [creatingSuperadmin, setCreatingSuperadmin] = useState(false);
 
+  useEffect(() => { window.scrollTo({ top: 0 }); }, [view]);
+
   useEffect(() => {
     if (!user) router.replace("/login");
     else if (user.role !== "superadmin") router.replace("/");
   }, [router, user]);
 
   const loadAll = useCallback(async (token: string, initialize = false, keepTenantId?: string) => {
+    setLoading(true);
     try {
       setError("");
       const [tenantRows, userRows, testAccountRows, planRows, financeRows] = await Promise.all([
@@ -148,6 +175,8 @@ export default function SuperAdminPage() {
       }
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "No se pudo cargar el panel de 81cc.");
+    } finally {
+      setLoading(false);
     }
   }, []);
 
@@ -204,6 +233,7 @@ export default function SuperAdminPage() {
         effectiveMonthlyPrice: Number(effectiveMonthlyPrice),
       });
       await loadAll(token, false, selectedTenant.id);
+      setNotice(`Configuración de ${selectedTenant.name} guardada.`);
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "No se pudo guardar la configuración.");
     } finally {
@@ -231,6 +261,7 @@ export default function SuperAdminPage() {
       const next = rows.find((item) => item.code === planForm.code.trim().toLowerCase());
       if (next) hydratePlan(next);
       setFinances(await fetchSuperadminFinances(token));
+      setNotice("Plan guardado correctamente.");
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "No se pudo guardar el plan.");
     } finally {
@@ -253,6 +284,7 @@ export default function SuperAdminPage() {
       });
       setPlanRequests(rows);
       await loadAll(token, false, selectedTenant?.id);
+      setNotice(action === "approve" ? "Solicitud aprobada." : "Solicitud rechazada.");
     } catch (resolveError) {
       setError(resolveError instanceof Error ? resolveError.message : "No se pudo resolver la solicitud.");
     } finally {
@@ -275,6 +307,8 @@ export default function SuperAdminPage() {
       });
       setSuperadminForm((prev) => ({ ...prev, name: "", email: "", password: "" }));
       await loadAll(token, false, selectedTenant?.id);
+      setNotice("Superadministrador creado correctamente.");
+      setShowCreateAdmin(false);
     } catch (createError) {
       setError(createError instanceof Error ? createError.message : "No se pudo crear el superadmin.");
     } finally {
@@ -300,54 +334,98 @@ export default function SuperAdminPage() {
 
   if (!user || user.role !== "superadmin") return null;
 
+  const pendingRequests = planRequests.filter((request) => request.status === "pending");
+  const needsAttention = tenants.filter((tenant) => tenant.warningLevel !== "normal" || tenant.status === "suspended").sort((a, b) => a.remainingDays - b.remainingDays);
+  const visibleTenants = tenants.filter((tenant) => {
+    const matchesSearch = `${tenant.name} ${tenant.ownerEmail ?? ""}`.toLowerCase().includes(tenantSearch.toLowerCase());
+    return matchesSearch && (tenantStatusFilter === "all" || (tenantStatusFilter === "attention" ? tenant.warningLevel !== "normal" : tenant.status === tenantStatusFilter));
+  });
+  const openTenant = (tenant: SuperadminTenant) => { hydrateTenant(tenant); setView("tenants"); setNotice(""); };
+
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(56,189,248,0.16),transparent_18%),radial-gradient(circle_at_20%_78%,rgba(245,158,11,0.14),transparent_20%),radial-gradient(circle_at_92%_20%,rgba(168,85,247,0.12),transparent_16%),linear-gradient(180deg,#07111f_0%,#0b1424_48%,#08111c_100%)] text-white">
       <header className="sticky top-0 z-40 border-b border-white/10 bg-slate-950/80 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-6">
           <div>
             <div className="text-2xl font-extrabold tracking-tight">81<span className="text-amber-400">cc</span></div>
-            <p className="text-sm text-slate-400">Panel de administración de 81cc</p>
+            <p className="text-xs font-medium tracking-wide text-slate-400">CENTRO DE CONTROL</p>
           </div>
           <div className="flex gap-3">
-            <button onClick={() => router.push("/laboratorio")} className="rounded-2xl border border-sky-400/20 bg-sky-400/10 px-4 py-2 text-sm font-semibold text-sky-100">
-              Abrir laboratorio
+            <button onClick={() => router.push("/laboratorio")} className="flex items-center gap-2 rounded-xl border border-sky-400/20 bg-sky-400/10 px-3 py-2 text-sm font-semibold text-sky-100">
+              <FlaskConical size={16} /> Laboratorio
             </button>
             <button onClick={() => { logout(); router.push("/login"); }} className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-300">
-              Salir
+              <span className="flex items-center gap-2"><LogOut size={16} /> Salir</span>
             </button>
           </div>
         </div>
+        <nav aria-label="Secciones de administración" className="mx-auto flex max-w-7xl gap-1 overflow-x-auto px-4 sm:px-6">
+          {adminViews.map(({ id, label, icon: Icon }) => <button key={id} type="button" aria-current={view === id ? "page" : undefined} onClick={() => { setView(id); setNotice(""); }} className={`flex shrink-0 items-center gap-2 border-b-2 px-4 py-3 text-sm font-semibold transition ${view === id ? "border-amber-400 text-amber-300" : "border-transparent text-slate-400 hover:bg-white/5 hover:text-white"}`}><Icon size={17} />{label}{id === "requests" && pendingRequests.length > 0 && <span className="rounded-full bg-amber-400 px-2 text-xs text-slate-950">{pendingRequests.length}</span>}</button>)}
+        </nav>
       </header>
 
-      <main className="mx-auto max-w-7xl space-y-8 px-6 py-10">
-        {error ? <div className="rounded-2xl border border-red-500/25 bg-red-500/10 px-4 py-3 text-sm text-red-200">{error}</div> : null}
+      <main className="mx-auto max-w-7xl space-y-6 px-4 py-8 sm:px-6">
+        <div className="flex items-start justify-between gap-4">
+          <div><p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-sky-300">Administración de 81cc</p><h1 className="text-3xl font-bold tracking-tight sm:text-4xl">{view === "overview" ? "Tu plataforma, de un vistazo" : adminViews.find((entry) => entry.id === view)?.label}</h1><p className="mt-2 text-sm text-slate-400">{view === "overview" ? `Hola, ${user.name.split(" ")[0]}. Estos son los números y las tareas que necesitan tu atención.` : viewDescriptions[view]}</p></div>
+          <button type="button" aria-label="Actualizar panel" disabled={loading} onClick={() => { const token = getStoredStaffToken(); if (token) void loadAll(token, false, selectedTenant?.id); }} className="rounded-xl border border-white/10 p-3 text-slate-300 transition hover:bg-white/10 disabled:opacity-40"><RefreshCw size={18} className={loading ? "animate-spin" : ""} /></button>
+        </div>
+        {error ? <div role="alert" className="rounded-2xl border border-red-500/25 bg-red-500/10 px-4 py-3 text-sm text-red-200">{error} <span>Usá Actualizar panel para reintentar.</span></div> : null}
+        {notice && <div role="status" className="flex items-center gap-2 rounded-xl border border-emerald-400/20 bg-emerald-400/10 p-4 text-sm text-emerald-200"><CheckCircle2 size={18} />{notice}</div>}
+        {loading && <p role="status" className="text-sm text-sky-200">Actualizando información…</p>}
 
-        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {view === "overview" && <>
+          <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <KpiCard label="Talleres activos" value={loading && !finances ? "—" : finances?.headline.activeTenants ?? 0} description="Talleres habilitados en la plataforma" tone="sky" />
+            <KpiCard label="Ingreso mensual" value={loading && !finances ? "—" : `$${(finances?.headline.mrr ?? 0).toLocaleString("es-AR")}`} description="Recurrente estimado según los planes" tone="amber" />
+            <KpiCard label="Solicitudes pendientes" value={loading ? "—" : pendingRequests.length} description="Cambios de plan por resolver" tone="violet" />
+            <KpiCard label="Requieren atención" value={loading ? "—" : needsAttention.length} description="Vencimientos próximos o suspensiones" tone="rose" />
+          </section>
+          <section className="grid gap-6 lg:grid-cols-[1.25fr_0.75fr]">
+            <Panel title="Qué necesita tu atención" subtitle="Empezá por lo que tiene una acción pendiente">
+              {!loading && !needsAttention.length && !pendingRequests.length && <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-6"><CheckCircle2 className="mb-3 text-emerald-300" size={30} /><h3 className="font-bold text-emerald-100">Todo al día</h3><p className="mt-2 text-sm text-slate-400">No hay solicitudes pendientes, vencimientos próximos ni talleres suspendidos.</p></div>}
+              {pendingRequests.length > 0 && <button onClick={() => setView("requests")} className="mb-3 flex w-full items-center justify-between gap-3 rounded-xl border border-amber-400/20 bg-amber-400/10 p-4 text-left"><div><p className="font-semibold text-amber-100">{pendingRequests.length} {pendingRequests.length === 1 ? "solicitud de plan" : "solicitudes de plan"}</p><p className="mt-1 text-xs text-slate-400">Revisá los pedidos de los talleres</p></div><ArrowUpRight size={20} /></button>}
+              {needsAttention.slice(0, 4).map((tenant) => <button key={tenant.id} onClick={() => openTenant(tenant)} className="mb-2 flex w-full flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-4 text-left transition hover:border-amber-400/40"><div><p className="font-semibold">{tenant.name}</p><p className="mt-1 text-xs text-slate-400">{tenant.status === "suspended" ? "Taller suspendido" : remainingLabel(tenant.remainingDays)}</p></div><span className="flex items-center gap-3"><WarningBadge level={tenant.warningLevel} /><ArrowUpRight size={18} /></span></button>)}
+              {needsAttention.length > 4 && <button onClick={() => { setTenantStatusFilter("all"); setView("tenants"); }} className="mt-3 text-sm font-semibold text-sky-300">Ver todos los talleres →</button>}
+            </Panel>
+            <Panel title="Acciones rápidas" subtitle="Un acceso directo a cada tarea">
+              <div className="space-y-3">{[{title:"Gestionar talleres", description:"Contratos, vigencia y estado", target:"tenants" as AdminView, icon:Building2}, {title:"Revisar solicitudes", description:"Aprobar o rechazar cambios de plan", target:"requests" as AdminView, icon:CreditCard}, {title:"Explorar usuarios", description:"Accesos y actividad del equipo", target:"users" as AdminView, icon:Users}].map(({title,description,target,icon:Icon}) => <button key={target} onClick={() => setView(target)} className="group flex w-full items-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-4 text-left transition hover:border-sky-400/30 hover:bg-sky-400/5"><span className="rounded-xl bg-sky-400/10 p-2.5 text-sky-300"><Icon size={20} /></span><div className="min-w-0 flex-1"><p className="text-sm font-semibold">{title}</p><p className="mt-1 text-xs text-slate-400">{description}</p></div><ArrowUpRight size={17} className="text-slate-500 group-hover:text-sky-300" /></button>)}</div>
+            </Panel>
+          </section>
+          <Panel title="Red de talleres" subtitle="Elegí un taller para abrir su configuración">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{tenants.slice(0,6).map((tenant) => <button key={tenant.id} onClick={() => openTenant(tenant)} className="group rounded-2xl border border-white/10 bg-gradient-to-br from-white/[0.05] to-transparent p-5 text-left transition hover:-translate-y-1 hover:border-sky-400/40"><div className="mb-4 flex items-center justify-between"><span className="rounded-xl bg-violet-400/10 p-3 text-violet-300"><Building2 size={22} /></span><StatusBadge status={tenant.status} /></div><h3 className="font-bold">{tenant.name}</h3><p className="mt-1 truncate text-xs text-slate-400">{tenant.ownerEmail || "Sin correo de titular"}</p><div className="mt-4 flex items-center justify-between border-t border-white/10 pt-3 text-sm"><span className="text-slate-300">{tenant.effectivePlanLabel} · ${tenant.effectiveMonthlyPrice.toLocaleString("es-AR")}/mes</span><ArrowUpRight size={18} className="text-sky-300" /></div></button>)}</div>
+            {!loading && !tenants.length && <p className="text-sm text-slate-400">Todavía no hay talleres registrados.</p>}
+            {tenants.length > 6 && <button onClick={() => setView("tenants")} className="mt-5 text-sm font-semibold text-sky-300">Ver los {tenants.length} talleres →</button>}
+          </Panel>
+        </>}
+
+        {view === "finances" && <><section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <KpiCard label="Talleres activos" value={finances?.headline.activeTenants ?? 0} description={finances?.descriptions.activeTenants ?? ""} tone="sky" />
           <KpiCard label="Suspendidos" value={finances?.headline.suspendedTenants ?? 0} description={finances?.descriptions.suspendedTenants ?? ""} tone="rose" />
-          <KpiCard label="MRR" value={`$${(finances?.headline.mrr ?? 0).toLocaleString("es-AR")}`} description={finances?.descriptions.mrr ?? ""} tone="amber" />
-          <KpiCard label="ARPA" value={`$${Math.round(finances?.headline.arpa ?? 0).toLocaleString("es-AR")}`} description={finances?.descriptions.arpa ?? ""} tone="violet" />
-          <KpiCard label="ARR proyectado" value={`$${(finances?.headline.projectedArr ?? 0).toLocaleString("es-AR")}`} description={finances?.descriptions.projectedArr ?? ""} tone="sky" />
-          <KpiCard label="Take rate" value={`${(finances?.headline.takeRate ?? 0).toFixed(1).replace(".", ",")}%`} description={finances?.descriptions.takeRate ?? ""} tone="emerald" />
+          <KpiCard label="Ingreso mensual (MRR)" value={`$${(finances?.headline.mrr ?? 0).toLocaleString("es-AR")}`} description={finances?.descriptions.mrr ?? ""} tone="amber" />
+          <KpiCard label="Promedio por taller" value={`$${Math.round(finances?.headline.arpa ?? 0).toLocaleString("es-AR")}`} description={finances?.descriptions.arpa ?? ""} tone="violet" />
+          <KpiCard label="Proyección anual" value={`$${(finances?.headline.projectedArr ?? 0).toLocaleString("es-AR")}`} description={finances?.descriptions.projectedArr ?? ""} tone="sky" />
+          <KpiCard label="Ingreso / volumen" value={`${(finances?.headline.takeRate ?? 0).toFixed(1).replace(".", ",")}%`} description={finances?.descriptions.takeRate ?? ""} tone="emerald" />
           <KpiCard label="Volumen procesado" value={`$${(finances?.headline.processedVolume ?? 0).toLocaleString("es-AR")}`} description={finances?.descriptions.processedVolume ?? ""} tone="amber" />
-          <KpiCard label="Planes custom" value={finances?.headline.customPlans ?? 0} description={finances?.descriptions.customPlans ?? ""} tone="violet" />
-        </section>
+          <KpiCard label="Planes personalizados" value={finances?.headline.customPlans ?? 0} description={finances?.descriptions.customPlans ?? ""} tone="violet" />
+        </section></>}
 
-        <section className="grid gap-4 xl:grid-cols-4">
+        {view === "finances" && <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <AlertCard label="Vencen en 30 días" value={finances?.expiringSummary.dueIn30Days ?? 0} tone="amber" />
           <AlertCard label="Vencen en 15 días" value={finances?.expiringSummary.dueIn15Days ?? 0} tone="orange" />
           <AlertCard label="Vencen en 7 días" value={finances?.expiringSummary.dueIn7Days ?? 0} tone="rose" />
           <AlertCard label="MRR en riesgo" value={`$${(finances?.expiringSummary.atRiskMrr ?? 0).toLocaleString("es-AR")}`} tone="violet" />
-        </section>
+        </section>}
 
-        <section className="grid gap-8 xl:grid-cols-[1.1fr_0.9fr]">
-          <Panel title="Mapa de talleres" subtitle="Contratos, ciclos y alertas">
-            <div className="grid gap-4">
-              {tenants.map((tenant) => (
+        {view === "tenants" && <section className="grid items-start gap-6 xl:grid-cols-[1fr_1fr]">
+          <Panel title="Directorio de talleres" subtitle={`${visibleTenants.length} de ${tenants.length} talleres · Seleccioná uno para editarlo`}>
+            <div className="mb-5 space-y-3"><label className="relative block"><Search className="absolute left-3 top-4 text-slate-500" size={17} /><input aria-label="Buscar taller" placeholder="Nombre o correo del taller" value={tenantSearch} onChange={(event) => setTenantSearch(event.target.value)} className={`${inputClassName} pl-10`} /></label><select aria-label="Filtrar talleres" value={tenantStatusFilter} onChange={(event) => setTenantStatusFilter(event.target.value)} className={inputClassName}><option value="all">Todos los talleres</option><option value="active">Activos</option><option value="suspended">Suspendidos</option><option value="attention">Vencimientos próximos o vencidos</option></select></div>
+            <div className="grid max-h-[720px] gap-4 overflow-y-auto pr-1">
+              {visibleTenants.map((tenant) => (
                 <button
                   key={tenant.id}
                   type="button"
                   onClick={() => hydrateTenant(tenant)}
+                  aria-pressed={selectedTenant?.id === tenant.id}
                   className={`rounded-[1.4rem] border p-4 text-left transition ${
                     selectedTenant?.id === tenant.id ? "border-amber-400/35 bg-white/[0.06]" : "border-white/8 bg-white/[0.03]"
                   }`}
@@ -374,6 +452,7 @@ export default function SuperAdminPage() {
                   </div>
                 </button>
               ))}
+              {!visibleTenants.length && <p className="py-6 text-center text-sm text-slate-400">No hay talleres que coincidan con tu búsqueda.</p>}
             </div>
           </Panel>
 
@@ -427,9 +506,10 @@ export default function SuperAdminPage() {
               <p className="text-sm text-slate-400">Seleccioná un taller para editar su contrato.</p>
             )}
           </Panel>
-        </section>
+        </section>}
 
-        <section className="grid gap-8 xl:grid-cols-[0.9fr_1.1fr]">
+        <div className="contents">
+          {view === "plans" &&
           <Panel title="Catálogo de planes" subtitle="Base comercial de referencia">
             <form onSubmit={savePlan} className="space-y-4">
               <div className="space-y-3">
@@ -455,7 +535,7 @@ export default function SuperAdminPage() {
                 <Input label="Máx. usuarios" type="number" value={planForm.maxUsers} onChange={(value) => setPlanForm((prev) => ({ ...prev, maxUsers: value }))} />
               </div>
               <Input label="Máx. órdenes" type="number" value={planForm.maxWorkOrders} onChange={(value) => setPlanForm((prev) => ({ ...prev, maxWorkOrders: value }))} />
-              <Field label="Features">
+              <Field label="Funciones incluidas (separadas por comas)">
                 <textarea rows={3} value={planForm.features} onChange={(event) => setPlanForm((prev) => ({ ...prev, features: event.target.value }))} className={inputClassName} />
               </Field>
               <label className="flex items-center gap-2 text-sm font-semibold text-slate-300">
@@ -466,20 +546,11 @@ export default function SuperAdminPage() {
                 {savingPlan ? "Guardando..." : "Crear o actualizar plan"}
               </button>
             </form>
-          </Panel>
+          </Panel>}
 
-          <div className="space-y-8">
-            <Panel title="Finanzas de 81cc" subtitle="KPIs explicados y distribución visual">
-              <div className="grid gap-4 md:grid-cols-2">
-                <FinanceTile label="ARR proyectado" value={`$${(finances?.headline.projectedArr ?? 0).toLocaleString("es-AR")}`} description={finances?.descriptions.projectedArr ?? ""} />
-                <FinanceTile label="Take rate" value={`${(finances?.headline.takeRate ?? 0).toFixed(1).replace(".", ",")}%`} description={finances?.descriptions.takeRate ?? ""} />
-                <FinanceTile label="Volumen procesado" value={`$${(finances?.headline.processedVolume ?? 0).toLocaleString("es-AR")}`} description={finances?.descriptions.processedVolume ?? ""} />
-                <FinanceTile label="Talleres pagos" value={finances?.headline.activeTenants ?? 0} description={finances?.descriptions.activeTenants ?? ""} />
-              </div>
-            </Panel>
-
+          {view === "finances" && <div className="space-y-8">
             <div className="grid gap-8 lg:grid-cols-2">
-              <ChartPanel title="MRR por plan">
+              <ChartPanel title="Ingreso mensual por plan">
                 <ResponsiveContainer width="100%" height={260}>
                   <BarChart data={finances?.charts.byPlan ?? []}>
                     <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.12)" vertical={false} />
@@ -487,7 +558,7 @@ export default function SuperAdminPage() {
                     <YAxis tick={{ fill: "#cbd5e1", fontSize: 12 }} axisLine={false} tickLine={false} />
                     <Tooltip contentStyle={tooltipStyle} />
                     <Legend />
-                    <Bar dataKey="mrr" name="MRR" radius={[8, 8, 0, 0]}>
+                    <Bar dataKey="mrr" name="Ingreso mensual" radius={[8, 8, 0, 0]}>
                       {(finances?.charts.byPlan ?? []).map((entry) => <Cell key={entry.code} fill={entry.color} />)}
                     </Bar>
                   </BarChart>
@@ -520,10 +591,11 @@ export default function SuperAdminPage() {
                 </BarChart>
               </ResponsiveContainer>
             </ChartPanel>
-          </div>
-        </section>
+          </div>}
+        </div>
 
-        <section className="grid gap-8 xl:grid-cols-[1.05fr_0.95fr]">
+        <div className="contents">
+          {view === "requests" &&
           <Panel title="Solicitudes de plan" subtitle="Aprobación manual de contrataciones">
             {planRequestsSupported ? (
               <SimpleTable
@@ -543,7 +615,7 @@ export default function SuperAdminPage() {
                         ? "border-emerald-400/25 bg-emerald-400/10 text-emerald-200"
                         : "border-rose-400/25 bg-rose-400/10 text-rose-200"
                   }`}>
-                    {request.status}
+                    {request.status === "pending" ? "Pendiente" : request.status === "approved" ? "Aprobada" : "Rechazada"}
                   </span>,
                   <div key={`${request.id}-owner`} className="text-sm text-slate-300">
                     <p>{request.requestedByName}</p>
@@ -575,8 +647,9 @@ export default function SuperAdminPage() {
                 Este backend todavía no expone solicitudes de plan. Actualizalo y reiniciá el servicio para habilitar esta sección.
               </div>
             )}
-          </Panel>
+          </Panel>}
 
+          {view === "users" && <><button type="button" onClick={() => setShowCreateAdmin((value) => !value)} aria-expanded={showCreateAdmin} className="rounded-xl border border-violet-400/30 bg-violet-400/10 px-5 py-3 text-sm font-semibold text-violet-200">{showCreateAdmin ? "Cancelar alta de superadmin" : "+ Crear superadmin"}</button>{showCreateAdmin &&
           <Panel title="Crear superadmin" subtitle="Alta manual para equipo interno">
             <form onSubmit={createNewSuperadmin} className="space-y-4">
               <Input
@@ -616,9 +689,10 @@ export default function SuperAdminPage() {
                 {creatingSuperadmin ? "Creando..." : "Crear superadmin"}
               </button>
             </form>
-          </Panel>
-        </section>
+          </Panel>}</>}
+        </div>
 
+        {view === "users" && testAccounts.length > 0 &&
         <Panel title="Usuarios de prueba" subtitle="Sólo visible para superadmin">
           <SimpleTable
             headers={["Usuario", "Rol", "Ámbito", "Email", "Contraseña"]}
@@ -631,18 +705,19 @@ export default function SuperAdminPage() {
             ])}
             emptyText="No hay cuentas de prueba cargadas."
           />
-        </Panel>
+        </Panel>}
 
+        {view === "users" &&
         <Panel title="Usuarios globales" subtitle="Filtros rápidos de acceso y actividad">
           <div className="grid gap-3 md:grid-cols-3">
-            <input type="text" value={userSearch} onChange={(event) => setUserSearch(event.target.value)} placeholder="Buscar usuario, email o taller" className={inputClassName} />
-            <select value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)} className={inputClassName}>
+            <input aria-label="Buscar usuarios" type="text" value={userSearch} onChange={(event) => setUserSearch(event.target.value)} placeholder="Buscar usuario, email o taller" className={inputClassName} />
+            <select aria-label="Filtrar usuarios por rol" value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)} className={inputClassName}>
               <option value="todos">Todos los roles</option>
               <option value="owner">Dueños</option>
               <option value="employee">Empleados</option>
               <option value="superadmin">Superadmins</option>
             </select>
-            <select value={tenantFilter} onChange={(event) => setTenantFilter(event.target.value)} className={inputClassName}>
+            <select aria-label="Filtrar usuarios por taller" value={tenantFilter} onChange={(event) => setTenantFilter(event.target.value)} className={inputClassName}>
               <option value="todos">Todos los talleres</option>
               {tenants.map((tenant) => <option key={tenant.id} value={tenant.id}>{tenant.name}</option>)}
             </select>
@@ -659,7 +734,7 @@ export default function SuperAdminPage() {
               emptyText="No hay usuarios que coincidan con los filtros actuales."
             />
           </div>
-        </Panel>
+        </Panel>}
       </main>
     </div>
   );
@@ -690,10 +765,6 @@ function KpiCard({ label, value, description, tone }: { label: string; value: st
   return <div className={`rounded-[1.7rem] border p-5 ${tones[tone]}`}><p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-300/75">{label}</p><p className="mt-3 text-3xl font-extrabold text-white">{value}</p><p className="mt-3 text-sm text-slate-300/80">{description}</p></div>;
 }
 
-function FinanceTile({ label, value, description }: { label: string; value: string | number; description: string }) {
-  return <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.04] p-4"><p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-300/70">{label}</p><p className="mt-2 text-2xl font-bold text-white">{value}</p><p className="mt-2 text-sm text-slate-300/75">{description}</p></div>;
-}
-
 function MiniMetric({ label, value }: { label: string; value: string }) {
   return <div className="rounded-[1.2rem] border border-white/8 bg-white/[0.04] p-3"><p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">{label}</p><p className="mt-2 text-sm font-bold text-white">{value}</p></div>;
 }
@@ -711,7 +782,7 @@ function WarningBadge({ level }: { level: SuperadminTenant["warningLevel"] }) {
 
 function RolePill({ role }: { role: string }) {
   const tones: Record<string, string> = { owner: "border-amber-400/25 bg-amber-400/10 text-amber-200", employee: "border-sky-400/25 bg-sky-400/10 text-sky-200", superadmin: "border-violet-400/25 bg-violet-400/10 text-violet-200", client: "border-emerald-400/25 bg-emerald-400/10 text-emerald-200" };
-  return <span className={`rounded-full border px-3 py-1 text-xs font-bold ${tones[role] ?? "border-white/10 bg-white/5 text-slate-200"}`}>{role}</span>;
+  return <span className={`whitespace-nowrap rounded-full border px-3 py-1 text-xs font-bold ${tones[role] ?? "border-white/10 bg-white/5 text-slate-200"}`}>{{owner:"Dueño",employee:"Empleado",superadmin:"Superadmin",client:"Cliente"}[role] ?? role}</span>;
 }
 
 function AlertCard({ label, value, tone }: { label: string; value: string | number; tone: "amber" | "orange" | "rose" | "violet" }) {

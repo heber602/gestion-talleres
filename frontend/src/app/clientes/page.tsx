@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   createIntake,
@@ -36,6 +36,7 @@ export default function ClientesPage() {
     if (!token) return;
 
     try {
+      setError("");
       setClients(await fetchClients(token, search));
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "No se pudo cargar clientes.");
@@ -46,7 +47,8 @@ export default function ClientesPage() {
     void loadClients();
   }, []);
 
-  const handleCreate = async () => {
+  const handleCreate = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
     const token = getStoredStaffToken();
     if (!token) return;
 
@@ -83,7 +85,7 @@ export default function ClientesPage() {
       <div className="mb-8 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-3xl font-extrabold tracking-tight text-gray-900">Clientes del taller</h1>
-          <p className="mt-1 font-medium text-gray-500">Listado real de clientes y vehiculos guardados en SQL.</p>
+          <p className="mt-1 font-medium text-gray-500">Consultá clientes, sus vehículos y el historial de trabajos.</p>
         </div>
 
         <button
@@ -104,7 +106,7 @@ export default function ClientesPage() {
         </div>
       )}
 
-      <div className="mb-6 flex items-center gap-3 rounded-2xl border border-gray-100 bg-white p-2 shadow-sm">
+      <form onSubmit={(event) => { event.preventDefault(); void loadClients(searchTerm); }} className="mb-6 flex items-center gap-3 rounded-2xl border border-gray-100 bg-white p-2 shadow-sm">
         <input
           type="text"
           placeholder="Buscar por nombre, patente o telefono..."
@@ -113,12 +115,12 @@ export default function ClientesPage() {
           onChange={(event) => setSearchTerm(event.target.value)}
         />
         <button
-          onClick={() => void loadClients(searchTerm)}
+          type="submit"
           className="rounded-xl bg-gray-50 px-4 py-2 font-semibold text-gray-600 hover:bg-gray-100"
         >
           Filtrar
         </button>
-      </div>
+      </form>
 
       <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
         <div className="overflow-x-auto">
@@ -159,8 +161,8 @@ export default function ClientesPage() {
                     </div>
                   </td>
                   <td className="px-6 py-4 text-sm font-medium text-gray-600">
-                    {client.vehicles[0]?.workOrders[0]?.createdAt
-                      ? new Date(client.vehicles[0].workOrders[0].createdAt).toLocaleDateString("es-AR")
+                    {client.vehicles.some((vehicle) => vehicle.workOrders.length)
+                      ? new Date(Math.max(...client.vehicles.flatMap((vehicle) => vehicle.workOrders.map((order) => new Date(order.createdAt).getTime())))).toLocaleDateString("es-AR")
                       : "Sin ordenes"}
                   </td>
                   <td className="px-6 py-4 text-right">
@@ -182,16 +184,17 @@ export default function ClientesPage() {
 
       {isSlideOpen && (
         <>
-          <div className="fixed inset-0 z-40 bg-gray-900/30 backdrop-blur-sm" onClick={() => setIsSlideOpen(false)} />
-          <div className="fixed right-0 top-0 z-50 flex h-full w-full max-w-md flex-col bg-white shadow-2xl">
+          <div className="fixed inset-0 z-[70] bg-gray-900/30 backdrop-blur-sm" onClick={() => !saving && setIsSlideOpen(false)} />
+          <form onSubmit={handleCreate} role="dialog" aria-modal="true" aria-label="Nuevo ingreso" className="fixed right-0 top-0 z-[80] flex h-[100dvh] w-full max-w-md flex-col bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b border-gray-100 px-6 py-5">
               <h2 className="text-xl font-extrabold text-gray-900">Nuevo ingreso</h2>
-              <button onClick={() => setIsSlideOpen(false)} className="rounded-full bg-gray-50 p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-700">
+              <button type="button" disabled={saving} aria-label="Cerrar ingreso" onClick={() => setIsSlideOpen(false)} className="rounded-full bg-gray-50 p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-700">
                 X
               </button>
             </div>
 
             <div className="flex-1 space-y-4 overflow-y-auto p-6">
+              {error && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
               {[
                 ["clientName", "Nombre del cliente"],
                 ["phone", "Telefono"],
@@ -205,9 +208,11 @@ export default function ClientesPage() {
                 ["time", "Hora"],
               ].map(([key, label]) => (
                 <div key={key}>
-                  <label className="mb-1 block text-sm font-bold text-gray-700">{label}</label>
+                  <label htmlFor={`intake-${key}`} className="mb-1 block text-sm font-bold text-gray-700">{label}</label>
                   {key === "reason" ? (
                     <textarea
+                      id={`intake-${key}`}
+                      required
                       rows={3}
                       value={form.reason}
                       onChange={(event) => setForm((current) => ({ ...current, reason: event.target.value }))}
@@ -215,7 +220,11 @@ export default function ClientesPage() {
                     />
                   ) : (
                     <input
-                      type={key === "date" ? "date" : key === "time" ? "time" : key === "year" ? "number" : "text"}
+                      id={`intake-${key}`}
+                      type={key === "date" ? "date" : key === "time" ? "time" : key === "year" ? "number" : key === "email" ? "email" : key === "phone" ? "tel" : "text"}
+                      required={!["phone", "email", "year"].includes(key)}
+                      min={key === "year" ? 1886 : undefined}
+                      max={key === "year" ? 2100 : undefined}
                       value={form[key as keyof typeof form]}
                       onChange={(event) => setForm((current) => ({ ...current, [key]: event.target.value }))}
                       className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 outline-none focus:border-blue-500 focus:bg-white"
@@ -225,16 +234,16 @@ export default function ClientesPage() {
               ))}
             </div>
 
-            <div className="border-t border-gray-100 bg-gray-50 p-6">
+            <div className="border-t border-gray-100 bg-gray-50 p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
               <button
-                onClick={() => void handleCreate()}
+                type="submit"
                 disabled={saving}
                 className="w-full rounded-xl bg-blue-600 py-3.5 font-bold text-white hover:bg-blue-700 disabled:opacity-60"
               >
                 {saving ? "Guardando..." : "Crear vehiculo y turno"}
               </button>
             </div>
-          </div>
+          </form>
         </>
       )}
     </div>

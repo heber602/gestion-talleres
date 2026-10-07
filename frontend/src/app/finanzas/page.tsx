@@ -75,7 +75,7 @@ export default function FinanzasPage() {
         <div>
           <h1 className="text-3xl font-extrabold tracking-tight text-gray-900">Finanzas y Rendimiento</h1>
           <p className="mt-1 font-medium text-gray-500">
-            Analisis real de ingresos, costos y productividad del taller.
+            Importes presupuestados de las órdenes creadas en el período. Los costos incluyen repuestos y una estimación del 45% de la mano de obra.
           </p>
         </div>
 
@@ -101,10 +101,10 @@ export default function FinanzasPage() {
       )}
 
       <div className="mb-8 grid grid-cols-1 gap-6 md:grid-cols-3">
-        <MetricCard label={`Ingresos (${periodo})`} value={summary.ingresos} accent={`Margen ${trend}%`} accentClass="text-green-600 bg-green-50" />
-        <MetricCard label="Costos internos" value={summary.costos} accent={`Ratio ${summary.ingresos ? Math.round((summary.costos / summary.ingresos) * 100) : 0}%`} accentClass="text-red-600 bg-red-50" />
+        <MetricCard label={`Total presupuestado (${periodo})`} value={summary.ingresos} accent={`Margen estimado ${trend}%`} accentClass="text-green-600 bg-green-50" />
+        <MetricCard label="Costos estimados" value={summary.costos} accent={`Ratio ${summary.ingresos ? Math.round((summary.costos / summary.ingresos) * 100) : 0}%`} accentClass="text-red-600 bg-red-50" />
         <div className="flex flex-col justify-between rounded-2xl bg-gradient-to-br from-green-500 to-emerald-600 p-6 text-white shadow-md">
-          <p className="mb-2 text-sm font-medium text-green-100">Ganancia neta</p>
+          <p className="mb-2 text-sm font-medium text-green-100">Margen estimado</p>
           <h2 className="text-3xl font-extrabold">${summary.ganancia.toLocaleString("es-AR")}</h2>
         </div>
       </div>
@@ -125,8 +125,9 @@ export default function FinanzasPage() {
                 <YAxis axisLine={false} tickLine={false} tick={{ fill: "#6b7280", fontSize: 12 }} />
                 <Tooltip cursor={{ fill: "#f9fafb" }} contentStyle={{ borderRadius: "12px", border: "none", boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)" }} />
                 <Legend iconType="circle" wrapperStyle={{ paddingTop: "20px" }} />
-                <Bar dataKey="ingresos" name="Ingresos" fill="#93c5fd" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="ganancia" name="Ganancia" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="ingresos" name="Presupuestado" fill="#93c5fd" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="costos" name="Costos estimados" fill="#fca5a5" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="ganancia" name="Margen estimado" fill="#3b82f6" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -139,7 +140,7 @@ export default function FinanzasPage() {
             </svg>
             Productividad
           </h3>
-          <p className="mb-4 text-sm text-gray-500">Facturacion generada por cada mecanico.</p>
+          <p className="mb-4 text-sm text-gray-500">Total presupuestado de las órdenes asignadas a cada mecánico.</p>
 
           <div className="relative flex-1">
             <div className="h-56 w-full">

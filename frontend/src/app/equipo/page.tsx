@@ -15,7 +15,7 @@ import {
 const initialInvite = {
   name: "",
   email: "",
-  role: "employee" as "employee" | "superadmin",
+  role: "employee" as const,
 };
 
 export default function EquipoPage() {
@@ -111,17 +111,7 @@ export default function EquipoPage() {
           <form onSubmit={handleInvite} className="space-y-4">
             <Input label="Nombre" value={inviteForm.name} onChange={(value) => setInviteForm((prev) => ({ ...prev, name: value }))} required />
             <Input label="Email" type="email" value={inviteForm.email} onChange={(value) => setInviteForm((prev) => ({ ...prev, email: value }))} required />
-            <label className="block text-sm font-bold text-gray-700">
-              Rol
-              <select
-                value={inviteForm.role}
-                onChange={(event) => setInviteForm((prev) => ({ ...prev, role: event.target.value as "employee" | "superadmin" }))}
-                className="mt-1 w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 outline-none transition focus:border-blue-500 focus:bg-white"
-              >
-                <option value="employee">Empleado / Mecanico</option>
-                <option value="superadmin">Soporte avanzado</option>
-              </select>
-            </label>
+            <p className="text-sm text-gray-600">El acceso de equipo permite trabajar como empleado / mecánico de este taller.</p>
             <button
               type="submit"
               disabled={saving}

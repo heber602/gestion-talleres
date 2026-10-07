@@ -11,43 +11,17 @@ import {
 import { Throttle } from '@nestjs/throttler';
 import type { Request } from 'express';
 import type { Response } from 'express';
+import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { AuthService } from './auth.service';
-import { StaffRole } from './auth.types';
-
-interface LoginBody {
-  email: string;
-  password: string;
-  tenantId?: string;
-}
-
-interface OwnerRegistrationBody {
-  workshopName: string;
-  name: string;
-  email: string;
-  password: string;
-}
-
-interface ClientRegistrationBody {
-  name: string;
-  email: string;
-  phone?: string;
-  password: string;
-  plate: string;
-  brand: string;
-  model: string;
-  year?: number;
-}
-
-interface StaffInviteBody {
-  name: string;
-  email: string;
-  role: StaffRole;
-}
-
-interface AcceptInviteBody {
-  token: string;
-  password: string;
-}
+import {
+  LoginBody,
+  OwnerRegistrationBody,
+  ClientRegistrationBody,
+  StaffInviteBody,
+  AcceptInviteBody,
+  EmailDto,
+  ResetPasswordBody,
+} from './auth.dto';
 
 interface OwnerPlanSelectionBody {
   planCode: string;
@@ -72,28 +46,16 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   private frontendUrl() {
-    return process.env.FRONTEND_URL?.replace(/\/$/, '') ?? 'http://localhost:3001';
+    return (
+      (process.env.FRONTEND_URL || process.env.RENDER_EXTERNAL_URL)?.replace(/\/$/, '') ?? 'http://localhost:3001'
+    );
   }
 
   private googleCallbackUrl() {
     return (
       process.env.GOOGLE_REDIRECT_URI?.trim() ||
-      `${process.env.API_PUBLIC_URL?.replace(/\/$/, '') ?? 'http://localhost:3000'}/auth/google/callback`
+      `${process.env.API_PUBLIC_URL?.replace(/\/$/, '') ?? (process.env.RENDER_EXTERNAL_URL ? `${process.env.RENDER_EXTERNAL_URL.replace(/\/$/, '')}/api` : 'http://localhost:3000')}/auth/google/callback`
     );
-  }
-
-  private encodeState(payload: { tenantId?: string | null }) {
-    return Buffer.from(JSON.stringify(payload)).toString('base64url');
-  }
-
-  private decodeState(rawState?: string) {
-    if (!rawState) return {};
-    try {
-      const decoded = Buffer.from(rawState, 'base64url').toString('utf8');
-      return JSON.parse(decoded) as { tenantId?: string | null };
-    } catch {
-      return {};
-    }
   }
 
   private loginRedirect(params: Record<string, string | number>) {
@@ -105,10 +67,7 @@ export class AuthController {
   }
 
   @Get('google/start')
-  googleStart(
-    @Res() response: Response,
-    @Query('tenantId') tenantId?: string,
-  ) {
+  googleStart(@Res() response: Response) {
     const clientId = process.env.GOOGLE_CLIENT_ID?.trim();
 
     if (!clientId) {
@@ -125,7 +84,15 @@ export class AuthController {
     googleUrl.searchParams.set('response_type', 'code');
     googleUrl.searchParams.set('scope', 'openid email profile');
     googleUrl.searchParams.set('prompt', 'select_account');
-    googleUrl.searchParams.set('state', this.encodeState({ tenantId: tenantId ?? null }));
+    const state = randomBytes(32).toString('hex');
+    response.cookie('81cc_oauth_state', state, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 10 * 60 * 1000,
+    });
+    googleUrl.searchParams.set('state', state);
 
     return response.redirect(googleUrl.toString());
   }
@@ -139,6 +106,32 @@ export class AuthController {
   ) {
     const clientId = process.env.GOOGLE_CLIENT_ID?.trim();
     const clientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim();
+
+    const expectedState = request.headers.cookie
+      ?.split(';')
+      .map((part) => part.trim())
+      .find((part) => part.startsWith('81cc_oauth_state='))
+      ?.slice('81cc_oauth_state='.length);
+    response.clearCookie('81cc_oauth_state', {
+      path: '/',
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+    });
+    if (
+      !state ||
+      !expectedState ||
+      !/^[a-f0-9]{64}$/.test(state) ||
+      !/^[a-f0-9]{64}$/.test(expectedState) ||
+      !timingSafeEqual(Buffer.from(state), Buffer.from(expectedState))
+    ) {
+      return response.redirect(
+        this.loginRedirect({
+          googleError:
+            'La solicitud de Google expiró o no corresponde a este navegador. Volvé a intentar.',
+        }),
+      );
+    }
 
     if (!clientId || !clientSecret || !code) {
       return response.redirect(
@@ -185,17 +178,20 @@ export class AuthController {
       const profilePayload = (await profileResponse.json()) as {
         email?: string;
         name?: string;
+        email_verified?: boolean;
       };
 
-      if (!profileResponse.ok || !profilePayload.email) {
+      if (
+        !profileResponse.ok ||
+        !profilePayload.email ||
+        !profilePayload.email_verified
+      ) {
         return response.redirect(
           this.loginRedirect({
             googleError: 'No se pudo leer el perfil de Google',
           }),
         );
       }
-
-      this.decodeState(state);
 
       const session = await this.authService.loginWithGoogle(
         profilePayload.email,
@@ -227,7 +223,7 @@ export class AuthController {
   }
 
   // Límite estricto: 5 intentos/minuto para prevenir fuerza bruta
-  @Throttle({ default: { ttl: 60000, limit: 5 } })
+  @Throttle({ global: { ttl: 60000, limit: 5 } })
   @Post('login')
   login(@Body() body: LoginBody, @Req() request: Request) {
     return this.authService.loginWithCredentials(
@@ -241,7 +237,7 @@ export class AuthController {
     );
   }
 
-  @Throttle({ default: { ttl: 60000, limit: 5 } })
+  @Throttle({ global: { ttl: 60000, limit: 5 } })
   @Post('register-owner')
   registerOwner(@Body() body: OwnerRegistrationBody) {
     return this.authService.registerOwner(body);
@@ -252,7 +248,7 @@ export class AuthController {
     return this.authService.registerClient(body);
   }
 
-  @Throttle({ default: { ttl: 60000, limit: 5 } })
+  @Throttle({ global: { ttl: 60000, limit: 5 } })
   @Post('client/login')
   clientLogin(@Body() body: LoginBody, @Req() request: Request) {
     return this.authService.loginClient(body.email, body.password, {
@@ -263,24 +259,38 @@ export class AuthController {
 
   @Get('session')
   async session(@Headers('authorization') authorization?: string) {
-    return { user: await this.authService.requireSession(authorization, undefined, { allowRestricted: true }) };
+    return {
+      user: await this.authService.requireSession(authorization, undefined, {
+        allowRestricted: true,
+      }),
+    };
   }
 
   @Get('staff')
   async staff(@Headers('authorization') authorization?: string) {
-    const viewer = await this.authService.requireSession(authorization, 'staff');
+    const viewer = await this.authService.requireSession(
+      authorization,
+      'staff',
+    );
     return this.authService.listStaff(viewer);
   }
 
   @Get('staff/invites')
   async staffInvites(@Headers('authorization') authorization?: string) {
-    const viewer = await this.authService.requireSession(authorization, 'staff');
+    const viewer = await this.authService.requireSession(
+      authorization,
+      'staff',
+    );
     return this.authService.listStaffInvites(viewer);
   }
 
   @Get('owner/account-status')
   async ownerAccountStatus(@Headers('authorization') authorization?: string) {
-    const viewer = await this.authService.requireSession(authorization, 'staff', { allowRestricted: true });
+    const viewer = await this.authService.requireSession(
+      authorization,
+      'staff',
+      { allowRestricted: true },
+    );
     return this.authService.getOwnerAccountStatus(viewer);
   }
 
@@ -289,13 +299,22 @@ export class AuthController {
     @Headers('authorization') authorization?: string,
     @Body() body?: OwnerPlanSelectionBody,
   ) {
-    const viewer = await this.authService.requireSession(authorization, 'staff', { allowRestricted: true });
+    const viewer = await this.authService.requireSession(
+      authorization,
+      'staff',
+      { allowRestricted: true },
+    );
     return this.authService.selectOwnerPlan(viewer, body!);
   }
 
   @Get('superadmin/plan-requests')
-  async superadminPlanRequests(@Headers('authorization') authorization?: string) {
-    const viewer = await this.authService.requireSession(authorization, 'staff');
+  async superadminPlanRequests(
+    @Headers('authorization') authorization?: string,
+  ) {
+    const viewer = await this.authService.requireSession(
+      authorization,
+      'staff',
+    );
     return this.authService.listPlanChangeRequestsForSuperadmin(viewer);
   }
 
@@ -305,7 +324,10 @@ export class AuthController {
     @Req() request: Request,
     @Body() body?: ResolvePlanRequestBody,
   ) {
-    const viewer = await this.authService.requireSession(authorization, 'staff');
+    const viewer = await this.authService.requireSession(
+      authorization,
+      'staff',
+    );
     const requestId = Array.isArray(request.params.requestId)
       ? request.params.requestId[0]
       : request.params.requestId;
@@ -317,7 +339,10 @@ export class AuthController {
     @Headers('authorization') authorization?: string,
     @Body() body?: SuperadminCreateAccountBody,
   ) {
-    const viewer = await this.authService.requireSession(authorization, 'staff');
+    const viewer = await this.authService.requireSession(
+      authorization,
+      'staff',
+    );
     return this.authService.createSuperadminAccount(viewer, body!);
   }
 
@@ -326,7 +351,10 @@ export class AuthController {
     @Headers('authorization') authorization?: string,
     @Body() body?: StaffInviteBody,
   ) {
-    const viewer = await this.authService.requireSession(authorization, 'staff');
+    const viewer = await this.authService.requireSession(
+      authorization,
+      'staff',
+    );
     return this.authService.createStaffInvite(viewer, body!);
   }
 
@@ -342,31 +370,48 @@ export class AuthController {
 
   @Get('superadmin/tenants')
   async superadminTenants(@Headers('authorization') authorization?: string) {
-    const viewer = await this.authService.requireSession(authorization, 'staff');
+    const viewer = await this.authService.requireSession(
+      authorization,
+      'staff',
+    );
     return this.authService.listTenantsForSuperadmin(viewer);
   }
 
   @Get('superadmin/users')
   async superadminUsers(@Headers('authorization') authorization?: string) {
-    const viewer = await this.authService.requireSession(authorization, 'staff');
+    const viewer = await this.authService.requireSession(
+      authorization,
+      'staff',
+    );
     return this.authService.listUsersForSuperadmin(viewer);
   }
 
   @Get('superadmin/test-accounts')
-  async superadminTestAccounts(@Headers('authorization') authorization?: string) {
-    const viewer = await this.authService.requireSession(authorization, 'staff');
+  async superadminTestAccounts(
+    @Headers('authorization') authorization?: string,
+  ) {
+    const viewer = await this.authService.requireSession(
+      authorization,
+      'staff',
+    );
     return this.authService.listTestAccountsForSuperadmin(viewer);
   }
 
   @Get('superadmin/plans')
   async superadminPlans(@Headers('authorization') authorization?: string) {
-    const viewer = await this.authService.requireSession(authorization, 'staff');
+    const viewer = await this.authService.requireSession(
+      authorization,
+      'staff',
+    );
     return this.authService.listPlansForSuperadmin(viewer);
   }
 
   @Get('superadmin/finances')
   async superadminFinances(@Headers('authorization') authorization?: string) {
-    const viewer = await this.authService.requireSession(authorization, 'staff');
+    const viewer = await this.authService.requireSession(
+      authorization,
+      'staff',
+    );
     return this.authService.getPlatformFinanceSummary(viewer);
   }
 
@@ -384,7 +429,10 @@ export class AuthController {
       active?: boolean;
     },
   ) {
-    const viewer = await this.authService.requireSession(authorization, 'staff');
+    const viewer = await this.authService.requireSession(
+      authorization,
+      'staff',
+    );
     return this.authService.upsertPlanForSuperadmin(viewer, body!);
   }
 
@@ -393,21 +441,28 @@ export class AuthController {
     @Headers('authorization') authorization: string | undefined,
     @Req() request: Request,
   ) {
-    const viewer = await this.authService.requireSession(authorization, 'staff');
+    const viewer = await this.authService.requireSession(
+      authorization,
+      'staff',
+    );
     const tenantId = Array.isArray(request.params.tenantId)
       ? request.params.tenantId[0]
       : request.params.tenantId;
-    return this.authService.moderateTenant(viewer, tenantId, request.body ?? {});
+    return this.authService.moderateTenant(
+      viewer,
+      tenantId,
+      request.body ?? {},
+    );
   }
 
-  @Throttle({ default: { ttl: 60000, limit: 3 } })
+  @Throttle({ global: { ttl: 60000, limit: 3 } })
   @Post('forgot-password')
-  forgotPassword(@Body() body: { email: string }) {
+  forgotPassword(@Body() body: EmailDto) {
     return this.authService.forgotPassword(body.email);
   }
 
   @Post('reset-password')
-  resetPassword(@Body() body: { token: string; password: string }) {
+  resetPassword(@Body() body: ResetPasswordBody) {
     return this.authService.resetPassword(body.token, body.password);
   }
 }

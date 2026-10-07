@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useI18n } from "@/context/I18nContext";
+import { formatCalendarDate } from "@/lib/date";
 import {
   fetchDashboardSummary,
   fetchOwnerAccountStatus,
@@ -55,11 +56,13 @@ export default function Home() {
   };
 
   const summaryText = useMemo(() => {
+    if (error) return "No se pudo cargar la agenda.";
+    if (!data) return t("common", "loading");
     if (!data?.recentAppointments.length) {
       return t("dashboard", "noShiftsToday");
     }
     return `${data.recentAppointments.length} ${t("dashboard", "recentMovements")}`;
-  }, [data, t]);
+  }, [data, error, t]);
 
   return (
     <div className="mx-auto max-w-7xl p-4 pb-24 sm:p-6 md:p-8 md:pb-8">
@@ -77,7 +80,7 @@ export default function Home() {
       </header>
 
       {error ? (
-        <div className="mb-6 rounded-xl border border-red-300/35 bg-red-950/30 px-4 py-3 text-sm text-red-100">
+        <div role="alert" className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           {error}
         </div>
       ) : null}
@@ -100,9 +103,9 @@ export default function Home() {
       ) : null}
 
       <section className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        <StatCard label={t("dashboard", "shiftsToday")} value={stats.appointmentsToday} accent={t("dashboard", "agenda")} />
-        <StatCard label={t("dashboard", "vehiclesInShop")} value={stats.vehiclesInWorkshop} accent={t("dashboard", "inProcess")} />
-        <StatCard label={t("dashboard", "activeOrders")} value={stats.activeOrders} accent={t("dashboard", "tracking")} />
+        <StatCard label={t("dashboard", "shiftsToday")} value={data ? stats.appointmentsToday : "—"} accent={t("dashboard", "agenda")} />
+        <StatCard label={t("dashboard", "vehiclesInShop")} value={data ? stats.vehiclesInWorkshop : "—"} accent={t("dashboard", "inProcess")} />
+        <StatCard label={t("dashboard", "activeOrders")} value={data ? stats.activeOrders : "—"} accent={t("dashboard", "tracking")} />
       </section>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.2fr_0.8fr]">
@@ -127,14 +130,14 @@ export default function Home() {
                   {appointment.vehicleLabel} · {appointment.plate}
                 </h3>
                 <p className="mt-1 text-sm text-white/80">
-                  {appointment.time} · {appointment.reason}
+                  {formatCalendarDate(appointment.date)} · {appointment.time} · {appointment.reason}
                 </p>
                 <span className="mt-3 inline-flex rounded-full border border-[#8A8A80]/45 bg-[#190B47]/50 px-3 py-1 text-xs font-semibold text-white">
-                  {appointment.status}
+                  {appointment.status === "pending" ? "Pendiente" : appointment.status}
                 </span>
               </article>
             ))}
-            {!data?.recentAppointments.length ? (
+            {data && !data.recentAppointments.length ? (
               <div className="p-4 text-sm text-[#8A8A80] sm:p-5">{t("dashboard", "noShiftsLoaded")}</div>
             ) : null}
           </div>
@@ -173,7 +176,7 @@ export default function Home() {
   );
 }
 
-function StatCard({ label, value, accent }: { label: string; value: number; accent: string }) {
+function StatCard({ label, value, accent }: { label: string; value: number | string; accent: string }) {
   return (
     <div className="rounded-xl border border-white/12 bg-[#2400A2]/80 p-4 shadow-[0_12px_30px_rgba(7,3,24,0.20)] sm:p-5">
       <p className="text-sm font-medium text-[#8A8A80]">{label}</p>

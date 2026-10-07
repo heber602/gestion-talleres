@@ -1,6 +1,7 @@
 "use client";
 
 import { type FormEvent, useEffect, useState } from "react";
+import { formatCalendarDate } from "@/lib/date";
 import {
   createIntake,
   fetchAppointmentsBoard,
@@ -179,7 +180,7 @@ export default function TurnosPage() {
       setSaving(true);
       setError("");
       const updated = await updateWorkOrder(token, selectedOrder.id, {
-        diagnostic: editor.diagnostic || undefined,
+        diagnostic: editor.diagnostic,
         laborCost: editor.laborCost ? Number(editor.laborCost) : 0,
         totalCost: editor.totalCost ? Number(editor.totalCost) : 0,
         recommendedNextRevisionDate: editor.recommendedNextRevisionDate || null,
@@ -304,7 +305,7 @@ export default function TurnosPage() {
                       {item.plate}
                     </span>
                     <span className="text-xs font-medium text-gray-400">
-                      {new Date(item.scheduledFor).toLocaleDateString("es-AR")}
+                      {item.itemType === "appointment" ? formatCalendarDate(item.scheduledFor) : new Date(item.scheduledFor).toLocaleDateString("es-AR")}
                       {item.time ? ` • ${item.time}` : ""}
                     </span>
                   </div>
@@ -387,6 +388,7 @@ export default function TurnosPage() {
             </div>
 
             <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
+              {error && <p role="alert" className="mx-6 mt-3 rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
               <div className="min-h-0 flex-1 space-y-6 overflow-y-auto overscroll-y-contain p-4 pb-28 sm:p-6 sm:pb-24">
                 <section>
                   <div className="mb-4 flex items-center gap-2">
@@ -486,12 +488,13 @@ export default function TurnosPage() {
             </div>
 
             <form onSubmit={handleEditorSubmit} className="flex min-h-0 flex-1 flex-col">
+              {error && <p role="alert" className="mx-6 mt-3 rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
               <div className="min-h-0 flex-1 space-y-6 overflow-y-auto overscroll-y-contain p-4 pb-28 sm:p-6 sm:pb-24">
                 <div className="rounded-2xl border border-gray-100 bg-gray-50 p-4 text-sm text-gray-700">
                   <p className="font-semibold text-gray-900">Turno asociado</p>
                   <p className="mt-1">
                     {selectedOrder.appointment
-                      ? `${selectedOrder.appointment.reason} • ${new Date(selectedOrder.appointment.date).toLocaleDateString("es-AR")} ${selectedOrder.appointment.time}`
+                      ? `${selectedOrder.appointment.reason} • ${formatCalendarDate(selectedOrder.appointment.date)} ${selectedOrder.appointment.time}`
                       : "Orden creada directamente en taller"}
                   </p>
                 </div>

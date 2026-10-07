@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -25,38 +26,68 @@ export class WorkshopService {
       throw new ForbiddenException('Usuario sin taller asociado.');
     }
 
-    const [appointmentsToday, activeOrders, vehiclesInWorkshop, recentAppointments] =
-      await Promise.all([
-        this.prisma.appointment.count({
-          where: {
-            tenantId: user.tenantId,
-          },
-        }),
-        this.prisma.workOrder.count({
-          where: {
-            tenantId: user.tenantId,
-            status: {
-              in: ['pending', 'estimating', 'waiting_parts', 'repairing'],
+    // Appointment.date es una fecha de calendario almacenada como DATE.
+    const today = new Date(
+      `${new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'America/Argentina/Buenos_Aires',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).format(new Date())}T00:00:00.000Z`,
+    );
+    const [
+      appointmentsToday,
+      vehiclesInWorkshop,
+      activeOrders,
+      recentAppointments,
+    ] = await Promise.all([
+      this.prisma.appointment.count({
+        where: {
+          tenantId: user.tenantId,
+          date: today,
+          status: { not: 'cancelled' },
+        },
+      }),
+      this.prisma.vehicle.count({
+        where: {
+          tenantId: user.tenantId,
+          workOrders: {
+            some: {
+              status: {
+                in: [
+                  'pending',
+                  'estimating',
+                  'waiting_parts',
+                  'repairing',
+                  'finished',
+                ],
+              },
             },
           },
-        }),
-        this.prisma.workOrder.count({
-          where: {
-            tenantId: user.tenantId,
-            status: {
-              in: ['pending', 'estimating', 'waiting_parts', 'repairing'],
-            },
+        },
+      }),
+      this.prisma.workOrder.count({
+        where: {
+          tenantId: user.tenantId,
+          status: {
+            in: ['pending', 'estimating', 'waiting_parts', 'repairing'],
           },
-        }),
-        this.prisma.appointment.findMany({
-          where: { tenantId: user.tenantId },
-          include: {
-            vehicle: true,
-          },
-          orderBy: [{ date: 'asc' }, { time: 'asc' }],
-          take: 5,
-        }),
-      ]);
+        },
+      }),
+      this.prisma.appointment.findMany({
+        where: {
+          tenantId: user.tenantId,
+          date: { gte: today },
+          status: 'pending',
+          workOrder: null,
+        },
+        include: {
+          vehicle: true,
+        },
+        orderBy: [{ date: 'asc' }, { time: 'asc' }],
+        take: 5,
+      }),
+    ]);
 
     return {
       stats: {
@@ -68,6 +99,7 @@ export class WorkshopService {
         id: appointment.id,
         vehicleLabel: `${appointment.vehicle.brand} ${appointment.vehicle.model}`,
         plate: appointment.vehicle.plate,
+        date: appointment.date,
         time: appointment.time,
         reason: appointment.reason,
         status: appointment.status,
@@ -136,64 +168,149 @@ export class WorkshopService {
       throw new ForbiddenException('Usuario sin taller asociado.');
     }
 
-    const normalizedPlate = input.plate.replace(/\s+/g, '').toUpperCase();
+    const tenantId = user.tenantId;
+    return this.prisma.$transaction(async (tx) => {
+      const normalizedPlate = input.plate.replace(/\s+/g, '').toUpperCase();
 
-    let client = null;
-    if (input.email) {
-      client = await this.prisma.client.findFirst({
+      const existingVehicle = await tx.vehicle.findUnique({
         where: {
-          tenantId: user.tenantId,
-          email: input.email.toLowerCase().trim(),
+          tenantId_plate: { tenantId: tenantId, plate: normalizedPlate },
         },
+        include: { client: true },
       });
-    }
+      if (
+        existingVehicle &&
+        (input.email
+          ? existingVehicle.client.email?.toLowerCase() !==
+            input.email.toLowerCase().trim()
+          : existingVehicle.client.name.trim().toLowerCase() !==
+            input.clientName.trim().toLowerCase())
+      ) {
+        throw new BadRequestException(
+          'La patente ya pertenece a otro cliente. Revisá los datos antes de registrar el turno.',
+        );
+      }
+      let client = existingVehicle?.client ?? null;
+      if (input.email) {
+        client = await tx.client.findFirst({
+          where: {
+            tenantId: tenantId,
+            email: input.email.toLowerCase().trim(),
+          },
+        });
+      }
 
-    if (!client) {
-      client = await this.prisma.client.create({
-        data: {
-          tenantId: user.tenantId,
-          name: input.clientName,
-          phone: input.phone,
-          email: input.email?.toLowerCase().trim(),
+      if (!client) {
+        client = await tx.client.create({
+          data: {
+            tenantId: tenantId,
+            name: input.clientName,
+            phone: input.phone,
+            email: input.email?.toLowerCase().trim(),
+          },
+        });
+      }
+
+      const vehicle = await tx.vehicle.upsert({
+        where: {
+          tenantId_plate: {
+            tenantId: tenantId,
+            plate: normalizedPlate,
+          },
         },
-      });
-    }
-
-    const vehicle = await this.prisma.vehicle.upsert({
-      where: {
-        tenantId_plate: {
-          tenantId: user.tenantId,
+        update: {
+          clientId: client.id,
+          brand: input.brand,
+          model: input.model,
+          year: input.year,
+        },
+        create: {
+          tenantId: tenantId,
+          clientId: client.id,
           plate: normalizedPlate,
+          brand: input.brand,
+          model: input.model,
+          year: input.year,
         },
-      },
-      update: {
-        clientId: client.id,
-        brand: input.brand,
-        model: input.model,
-        year: input.year,
-      },
-      create: {
-        tenantId: user.tenantId,
-        clientId: client.id,
-        plate: normalizedPlate,
-        brand: input.brand,
-        model: input.model,
-        year: input.year,
-      },
-    });
+      });
 
-    const appointment = await this.prisma.appointment.create({
-      data: {
-        tenantId: user.tenantId,
+      const appointment = await tx.appointment.create({
+        data: {
+          tenantId: tenantId,
+          vehicleId: vehicle.id,
+          date: new Date(input.date),
+          time: input.time,
+          reason: input.reason,
+          status: 'pending',
+        },
+      });
+
+      return {
+        appointmentId: appointment.id,
         vehicleId: vehicle.id,
-        date: new Date(input.date),
-        time: input.time,
-        reason: input.reason,
-        status: 'pending',
-      },
+        clientId: client.id,
+      };
     });
+  }
 
-    return { appointmentId: appointment.id, vehicleId: vehicle.id, clientId: client.id };
+  async transferVehicle(
+    user: SessionUser,
+    vehicleId: string,
+    input: { clientId: string; expectedClientId: string; note?: string },
+  ) {
+    if (user.audience !== 'staff' || user.role !== 'owner' || !user.tenantId) {
+      throw new ForbiddenException('Solo el dueño del taller puede transferir vehículos.');
+    }
+    const tenantId = user.tenantId;
+    await this.ensureVehicleProfileTable();
+    return this.prisma.$transaction(async (tx) => {
+      const vehicle = await tx.vehicle.findFirst({
+        where: { id: vehicleId, tenantId },
+        include: { client: true },
+      });
+      if (!vehicle) throw new NotFoundException('Vehículo no encontrado en este taller.');
+      if (vehicle.clientId !== input.expectedClientId) {
+        throw new ConflictException('El titular del vehículo cambió. Actualizá la ficha antes de transferirlo.');
+      }
+      if (vehicle.clientId === input.clientId) {
+        throw new BadRequestException('El vehículo ya pertenece a ese cliente.');
+      }
+      const destination = await tx.client.findFirst({
+        where: { id: input.clientId, tenantId },
+      });
+      if (!destination) throw new NotFoundException('El nuevo cliente debe pertenecer al mismo taller.');
+      const [previousProfile] = await tx.$queryRaw<Array<{
+        alias: string | null; color: string | null; notes: string | null;
+        insuranceProvider: string | null; policyNumber: string | null;
+      }>>`
+        SELECT alias, color, notes, "insuranceProvider", "policyNumber"
+        FROM "VehicleProfile" WHERE "vehicleId" = ${vehicleId}
+      `;
+      const updated = await tx.vehicle.updateMany({
+        where: { id: vehicleId, tenantId, clientId: input.expectedClientId },
+        data: { clientId: destination.id },
+      });
+      if (updated.count !== 1) {
+        throw new ConflictException('El titular del vehículo cambió. Actualizá la ficha antes de transferirlo.');
+      }
+      await tx.vehicleOwnershipTransfer.create({
+        data: {
+          tenantId, vehicleId,
+          fromClientId: vehicle.clientId, toClientId: destination.id,
+          fromClientName: vehicle.client.name, toClientName: destination.name,
+          performedByUserId: user.id, performedByName: user.name,
+          note: input.note?.trim() || null,
+          previousProfile: previousProfile ?? undefined,
+        },
+      });
+      // La ficha personal del cliente anterior no debe seguir al nuevo titular.
+      await tx.$executeRaw`
+        UPDATE "VehicleProfile" SET alias = NULL, notes = NULL,
+          "insuranceProvider" = NULL, "policyNumber" = NULL, "updatedAt" = NOW()
+        WHERE "vehicleId" = ${vehicleId}
+      `;
+      return { ok: true, vehicleId, client: { id: destination.id, name: destination.name } };
+    });
   }
 
   async getVehicleHistory(user: SessionUser, vehicleId: string) {
@@ -207,6 +324,7 @@ export class WorkshopService {
       include: {
         tenant: true,
         client: true,
+        ownershipTransfers: { orderBy: { createdAt: 'desc' } },
         workOrders: {
           include: {
             mechanic: true,
@@ -259,6 +377,14 @@ export class WorkshopService {
         email: vehicle.client.email,
       },
       profile: await this.getVehicleProfile(vehicle.id),
+      ownershipTransfers: user.audience === 'staff'
+        ? vehicle.ownershipTransfers.map((transfer) => ({
+            id: transfer.id, fromClientName: transfer.fromClientName,
+            toClientName: transfer.toClientName, performedByName: transfer.performedByName,
+            note: transfer.note, createdAt: transfer.createdAt,
+            previousProfile: user.role === 'owner' ? transfer.previousProfile : null,
+          }))
+        : [],
       workOrders: vehicle.workOrders.map((order) => ({
         ...order,
         tenantId: vehicle.tenantId,
@@ -314,7 +440,9 @@ export class WorkshopService {
            ORDER BY "createdAt" DESC`,
         )
       : [];
-    const profiles = await this.getVehicleProfiles(allVehicles.map((vehicle) => vehicle.id));
+    const profiles = await this.getVehicleProfiles(
+      allVehicles.map((vehicle) => vehicle.id),
+    );
 
     return {
       ...client,
@@ -465,7 +593,13 @@ export class WorkshopService {
         where: {
           tenantId: user.tenantId,
           status: {
-            in: ['pending', 'estimating', 'waiting_parts', 'repairing', 'finished'],
+            in: [
+              'pending',
+              'estimating',
+              'waiting_parts',
+              'repairing',
+              'finished',
+            ],
           },
         },
         include: {
@@ -483,7 +617,10 @@ export class WorkshopService {
 
     const itemsByColumn = {
       agendados: appointments
-        .filter((appointment) => !appointment.workOrder)
+        .filter(
+          (appointment) =>
+            !appointment.workOrder && appointment.status === 'pending',
+        )
         .map((appointment) => ({
           id: appointment.id,
           itemType: 'appointment',
@@ -506,7 +643,10 @@ export class WorkshopService {
           plate: order.vehicle.plate,
           model: `${order.vehicle.brand} ${order.vehicle.model}`,
           client: order.vehicle.client.name,
-          reason: order.diagnostic ?? order.appointment?.reason ?? 'Diagnostico en curso',
+          reason:
+            order.diagnostic ??
+            order.appointment?.reason ??
+            'Diagnostico en curso',
           assigned: order.mechanic?.name ?? 'Sin asignar',
           urgent: /freno|motor|electr|ruido|urgente/i.test(
             `${order.diagnostic ?? ''} ${order.appointment?.reason ?? ''}`,
@@ -515,7 +655,9 @@ export class WorkshopService {
           time: order.appointment?.time ?? null,
         })),
       reparacion: workOrders
-        .filter((order) => ['waiting_parts', 'repairing'].includes(order.status))
+        .filter((order) =>
+          ['waiting_parts', 'repairing'].includes(order.status),
+        )
         .map((order) => ({
           id: order.id,
           itemType: 'workOrder',
@@ -523,7 +665,10 @@ export class WorkshopService {
           plate: order.vehicle.plate,
           model: `${order.vehicle.brand} ${order.vehicle.model}`,
           client: order.vehicle.client.name,
-          reason: order.diagnostic ?? order.appointment?.reason ?? 'Reparacion en curso',
+          reason:
+            order.diagnostic ??
+            order.appointment?.reason ??
+            'Reparacion en curso',
           assigned: order.mechanic?.name ?? 'Sin asignar',
           urgent: /freno|motor|electr|ruido|urgente/i.test(
             `${order.diagnostic ?? ''} ${order.appointment?.reason ?? ''}`,
@@ -540,7 +685,10 @@ export class WorkshopService {
           plate: order.vehicle.plate,
           model: `${order.vehicle.brand} ${order.vehicle.model}`,
           client: order.vehicle.client.name,
-          reason: order.diagnostic ?? order.appointment?.reason ?? 'Listo para entregar',
+          reason:
+            order.diagnostic ??
+            order.appointment?.reason ??
+            'Listo para entregar',
           assigned: order.mechanic?.name ?? 'Sin asignar',
           urgent: false,
           scheduledFor: order.updatedAt,
@@ -598,80 +746,115 @@ export class WorkshopService {
     if (input.sourceColumn === input.targetColumn) {
       throw new BadRequestException('El item ya se encuentra en esa columna.');
     }
+    const allowedTargets = {
+      agendados: ['diagnostico', 'reparacion', 'listos'],
+      diagnostico: ['reparacion', 'listos'],
+      reparacion: ['listos'],
+      listos: ['diagnostico'],
+    };
+    if (!allowedTargets[input.sourceColumn]?.includes(input.targetColumn)) {
+      throw new BadRequestException('Ese cambio de etapa no está permitido.');
+    }
 
-    if (input.sourceColumn === 'agendados') {
-      const appointment = await this.prisma.appointment.findFirst({
+    const tenantId = user.tenantId;
+    return this.prisma.$transaction(async (tx) => {
+      if (input.sourceColumn === 'agendados') {
+        const appointment = await tx.appointment.findFirst({
+          where: {
+            id: input.itemId,
+            tenantId: tenantId,
+          },
+          include: {
+            workOrder: true,
+          },
+        });
+
+        if (!appointment) {
+          throw new NotFoundException('Turno no encontrado.');
+        }
+
+        if (appointment.workOrder) {
+          throw new BadRequestException(
+            'Este turno ya fue ingresado al taller.',
+          );
+        }
+        if (appointment.status !== 'pending') {
+          throw new BadRequestException(
+            'El turno ya no está pendiente. Actualizá el tablero.',
+          );
+        }
+
+        const workOrder = await tx.workOrder.create({
+          data: {
+            tenantId: tenantId,
+            vehicleId: appointment.vehicleId,
+            appointmentId: appointment.id,
+            status: this.mapColumnToWorkOrderStatus(input.targetColumn),
+            diagnostic: appointment.reason,
+          },
+        });
+
+        await tx.appointment.update({
+          where: { id: appointment.id },
+          data: {
+            status:
+              input.targetColumn === 'listos' ? 'completed' : 'in_progress',
+          },
+        });
+
+        return {
+          ok: true,
+          workOrderId: workOrder.id,
+        };
+      }
+
+      const workOrder = await tx.workOrder.findFirst({
         where: {
           id: input.itemId,
-          tenantId: user.tenantId,
-        },
-        include: {
-          workOrder: true,
+          tenantId: tenantId,
         },
       });
 
-      if (!appointment) {
-        throw new NotFoundException('Turno no encontrado.');
+      if (!workOrder) {
+        throw new NotFoundException('Orden de trabajo no encontrada.');
       }
 
-      if (appointment.workOrder) {
-        throw new BadRequestException('Este turno ya fue ingresado al taller.');
-      }
-
-      const workOrder = await this.prisma.workOrder.create({
+      const sourceStatuses = {
+        diagnostico: ['pending', 'estimating'],
+        reparacion: ['waiting_parts', 'repairing'],
+        listos: ['finished'],
+      };
+      const moved = await tx.workOrder.updateMany({
+        where: {
+          id: workOrder.id,
+          tenantId: tenantId,
+          status: { in: sourceStatuses[input.sourceColumn] },
+        },
         data: {
-          tenantId: user.tenantId,
-          vehicleId: appointment.vehicleId,
-          appointmentId: appointment.id,
           status: this.mapColumnToWorkOrderStatus(input.targetColumn),
-          diagnostic: appointment.reason,
         },
       });
+      if (moved.count !== 1) {
+        throw new BadRequestException(
+          'La orden cambió de etapa. Actualizá el tablero antes de moverla.',
+        );
+      }
 
-      await this.prisma.appointment.update({
-        where: { id: appointment.id },
-        data: {
-          status: input.targetColumn === 'listos' ? 'completed' : 'in_progress',
-        },
-      });
+      if (workOrder.appointmentId) {
+        await tx.appointment.update({
+          where: { id: workOrder.appointmentId },
+          data: {
+            status:
+              input.targetColumn === 'listos' ? 'completed' : 'in_progress',
+          },
+        });
+      }
 
       return {
         ok: true,
         workOrderId: workOrder.id,
       };
-    }
-
-    const workOrder = await this.prisma.workOrder.findFirst({
-      where: {
-        id: input.itemId,
-        tenantId: user.tenantId,
-      },
     });
-
-    if (!workOrder) {
-      throw new NotFoundException('Orden de trabajo no encontrada.');
-    }
-
-    await this.prisma.workOrder.update({
-      where: { id: workOrder.id },
-      data: {
-        status: this.mapColumnToWorkOrderStatus(input.targetColumn),
-      },
-    });
-
-    if (workOrder.appointmentId) {
-      await this.prisma.appointment.update({
-        where: { id: workOrder.appointmentId },
-        data: {
-          status: input.targetColumn === 'listos' ? 'completed' : 'in_progress',
-        },
-      });
-    }
-
-    return {
-      ok: true,
-      workOrderId: workOrder.id,
-    };
   }
 
   async listMechanics(user: SessionUser) {
@@ -860,53 +1043,71 @@ export class WorkshopService {
       throw new NotFoundException('Repuesto no encontrado.');
     }
 
-    const existing = await this.prisma.workOrderPart.findUnique({
-      where: {
-        workOrderId_itemId: {
-          workOrderId,
-          itemId: input.itemId,
-        },
-      },
-    });
-
-    if (existing) {
-      await this.prisma.workOrderPart.update({
+    await this.prisma.$transaction(async (tx) => {
+      const existing = await tx.workOrderPart.findUnique({
         where: {
           workOrderId_itemId: {
             workOrderId,
             itemId: input.itemId,
           },
         },
-        data: {
-          quantity: existing.quantity + input.quantity,
-          unitPrice: input.unitPrice,
-          internalCost: input.internalCost,
-          providedByClient: input.providedByClient ?? false,
-        },
       });
-    } else {
-      await this.prisma.workOrderPart.create({
-        data: {
-          workOrderId,
-          itemId: input.itemId,
-          quantity: input.quantity,
-          unitPrice: input.unitPrice,
-          internalCost: input.internalCost,
-          providedByClient: input.providedByClient ?? false,
-        },
-      });
-    }
 
-    if (!(input.providedByClient ?? false)) {
-      await this.prisma.inventoryItem.update({
-        where: { id: item.id },
-        data: {
-          stockQuantity: {
-            decrement: input.quantity,
+      if (
+        existing &&
+        (existing.providedByClient !== (input.providedByClient ?? false) ||
+          existing.unitPrice !== input.unitPrice ||
+          existing.internalCost !== input.internalCost)
+      ) {
+        throw new BadRequestException(
+          'Este repuesto ya tiene otro precio, costo u origen en la orden. Usá un artículo distinto para conservar el registro anterior.',
+        );
+      }
+
+      if (!(input.providedByClient ?? false)) {
+        const reserved = await tx.inventoryItem.updateMany({
+          where: {
+            id: item.id,
+            tenantId: user.tenantId,
+            stockQuantity: { gte: input.quantity },
           },
-        },
-      });
-    }
+          data: { stockQuantity: { decrement: input.quantity } },
+        });
+        if (reserved.count !== 1) {
+          throw new BadRequestException(
+            'Stock insuficiente para agregar este repuesto.',
+          );
+        }
+      }
+
+      if (existing) {
+        await tx.workOrderPart.update({
+          where: {
+            workOrderId_itemId: {
+              workOrderId,
+              itemId: input.itemId,
+            },
+          },
+          data: {
+            quantity: { increment: input.quantity },
+            unitPrice: input.unitPrice,
+            internalCost: input.internalCost,
+            providedByClient: input.providedByClient ?? false,
+          },
+        });
+      } else {
+        await tx.workOrderPart.create({
+          data: {
+            workOrderId,
+            itemId: input.itemId,
+            quantity: input.quantity,
+            unitPrice: input.unitPrice,
+            internalCost: input.internalCost,
+            providedByClient: input.providedByClient ?? false,
+          },
+        });
+      }
+    });
 
     return this.getWorkOrderDetail(user, workOrderId);
   }
@@ -940,6 +1141,15 @@ export class WorkshopService {
       throw new NotFoundException('Orden de trabajo no encontrada.');
     }
 
+    if (
+      Boolean(input.clientUpdateTitle?.trim()) !==
+      Boolean(input.clientUpdateMessage?.trim())
+    ) {
+      throw new BadRequestException(
+        'Completá el título y el mensaje de la actualización para el cliente.',
+      );
+    }
+
     if (input.mechanicId) {
       const mechanic = await this.prisma.user.findFirst({
         where: {
@@ -969,8 +1179,7 @@ export class WorkshopService {
           input.recommendedNextRevisionNote === null
             ? null
             : input.recommendedNextRevisionNote,
-        mechanicId:
-          input.mechanicId === null ? null : input.mechanicId,
+        mechanicId: input.mechanicId === null ? null : input.mechanicId,
       },
     });
 
@@ -1010,7 +1219,9 @@ export class WorkshopService {
         (total, part) => total + part.internalCost * part.quantity,
         0,
       );
-      const estimatedCost = Number((partsInternalCost + order.laborCost * 0.45).toFixed(2));
+      const estimatedCost = Number(
+        (partsInternalCost + order.laborCost * 0.45).toFixed(2),
+      );
       const margin = Number((order.totalCost - estimatedCost).toFixed(2));
 
       return {
@@ -1022,8 +1233,11 @@ export class WorkshopService {
         mecanico: order.mechanic?.name ?? 'Sin asignar',
         motivo: order.diagnostic ?? 'Trabajo en curso',
         estado: order.status,
-        prioridad:
-          margin < 80 ? 'urgente' : order.totalCost >= 300 ? 'alta' : 'normal',
+        prioridad: /freno|motor|electr|ruido|urgente/i.test(
+          order.diagnostic ?? '',
+        )
+          ? 'urgente'
+          : 'normal',
         fechaIngreso: order.createdAt,
         estimado: order.totalCost,
         internalCost: estimatedCost,
@@ -1038,6 +1252,11 @@ export class WorkshopService {
   ) {
     if (!user.tenantId) {
       throw new ForbiddenException('Usuario sin taller asociado.');
+    }
+    if (user.role !== 'owner') {
+      throw new ForbiddenException(
+        'Solo el dueño puede consultar las finanzas del taller.',
+      );
     }
 
     const safePeriod = period ?? 'semana';
@@ -1092,8 +1311,7 @@ export class WorkshopService {
         name: mechanicName,
         value: Number(((currentMechanic?.value ?? 0) + ingresos).toFixed(2)),
         color:
-          currentMechanic?.color ??
-          palette[byMechanic.size % palette.length],
+          currentMechanic?.color ?? palette[byMechanic.size % palette.length],
       });
 
       const bucketLabel = this.formatTimelineLabel(order.createdAt, safePeriod);
@@ -1103,9 +1321,13 @@ export class WorkshopService {
         costos: 0,
         ganancia: 0,
       };
-      currentBucket.ingresos = Number((currentBucket.ingresos + ingresos).toFixed(2));
+      currentBucket.ingresos = Number(
+        (currentBucket.ingresos + ingresos).toFixed(2),
+      );
       currentBucket.costos = Number((currentBucket.costos + costos).toFixed(2));
-      currentBucket.ganancia = Number((currentBucket.ganancia + ganancia).toFixed(2));
+      currentBucket.ganancia = Number(
+        (currentBucket.ganancia + ganancia).toFixed(2),
+      );
       timeline.set(bucketLabel, currentBucket);
     });
 
@@ -1116,7 +1338,9 @@ export class WorkshopService {
         costos: Number(summary.costos.toFixed(2)),
         ganancia: Number(summary.ganancia.toFixed(2)),
       },
-      byMechanic: Array.from(byMechanic.values()).sort((a, b) => b.value - a.value),
+      byMechanic: Array.from(byMechanic.values()).sort(
+        (a, b) => b.value - a.value,
+      ),
       timeline: Array.from(timeline.values()),
     };
   }
@@ -1130,7 +1354,10 @@ export class WorkshopService {
     return trimmed ? trimmed : null;
   }
 
-  private async buildClientVehicleWhere(vehicleId: string, clientId: string | null) {
+  private async buildClientVehicleWhere(
+    vehicleId: string,
+    clientId: string | null,
+  ) {
     if (!clientId) {
       return { id: vehicleId, clientId: '__missing__' };
     }
@@ -1390,7 +1617,9 @@ export class WorkshopService {
             ...order,
             tenantId: vehicle.tenantId,
             workshopName: vehicle.tenant.name,
-            updates: updates.filter((update) => update.workOrderId === order.id),
+            updates: updates.filter(
+              (update) => update.workOrderId === order.id,
+            ),
           })),
         });
         return;
@@ -1406,21 +1635,26 @@ export class WorkshopService {
         existing.client.email = vehicle.owner.email;
       }
       if (!existing.profile.alias) {
-        existing.profile.alias = profiles.get(vehicle.id)?.alias ?? existing.profile.alias;
+        existing.profile.alias =
+          profiles.get(vehicle.id)?.alias ?? existing.profile.alias;
       }
       if (!existing.profile.color) {
-        existing.profile.color = profiles.get(vehicle.id)?.color ?? existing.profile.color;
+        existing.profile.color =
+          profiles.get(vehicle.id)?.color ?? existing.profile.color;
       }
       if (!existing.profile.notes) {
-        existing.profile.notes = profiles.get(vehicle.id)?.notes ?? existing.profile.notes;
+        existing.profile.notes =
+          profiles.get(vehicle.id)?.notes ?? existing.profile.notes;
       }
       if (!existing.profile.insuranceProvider) {
         existing.profile.insuranceProvider =
-          profiles.get(vehicle.id)?.insuranceProvider ?? existing.profile.insuranceProvider;
+          profiles.get(vehicle.id)?.insuranceProvider ??
+          existing.profile.insuranceProvider;
       }
       if (!existing.profile.policyNumber) {
         existing.profile.policyNumber =
-          profiles.get(vehicle.id)?.policyNumber ?? existing.profile.policyNumber;
+          profiles.get(vehicle.id)?.policyNumber ??
+          existing.profile.policyNumber;
       }
       existing.workOrders.push(
         ...vehicle.workOrders.map((order) => ({
@@ -1441,13 +1675,16 @@ export class WorkshopService {
             : `${vehicle.workshops[0]} + ${vehicle.workshops.length - 1} talleres`,
         workOrders: vehicle.workOrders.sort(
           (left, right) =>
-            new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
+            new Date(right.createdAt).getTime() -
+            new Date(left.createdAt).getTime(),
         ),
       }))
       .sort((left, right) => left.plate.localeCompare(right.plate));
   }
 
-  private mapColumnToWorkOrderStatus(column: 'diagnostico' | 'reparacion' | 'listos') {
+  private mapColumnToWorkOrderStatus(
+    column: 'diagnostico' | 'reparacion' | 'listos',
+  ) {
     if (column === 'diagnostico') {
       return 'estimating';
     }
@@ -1485,7 +1722,10 @@ export class WorkshopService {
     return start;
   }
 
-  private formatTimelineLabel(date: Date, period: 'dia' | 'semana' | 'mes' | 'anio') {
+  private formatTimelineLabel(
+    date: Date,
+    period: 'dia' | 'semana' | 'mes' | 'anio',
+  ) {
     if (period === 'anio') {
       return date.toLocaleDateString('es-AR', { month: 'short' });
     }

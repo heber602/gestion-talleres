@@ -1,6 +1,6 @@
 "use client";
-import React, { createContext, useContext, useEffect, useState, ReactNode } from "react";
-import { fetchSession, getStoredStaffToken, loginWithCredentials, SessionUser, type TenantChoice } from "@/lib/auth-api";
+import React, { createContext, useCallback, useContext, useEffect, useState, ReactNode } from "react";
+import { ApiError, clearStoredStaffToken, fetchSession, getStoredStaffToken, loginWithCredentials, setStoredStaffToken, SessionUser, type TenantChoice } from "@/lib/auth-api";
 
 export type UserRole = "owner" | "employee" | "superadmin";
 
@@ -10,17 +10,18 @@ interface AuthContextType {
   user: AuthUser | null;
   isAuthenticated: boolean;
   isReady: boolean;
-  login: (email: string, password: string, tenantId?: string) => Promise<{ success: boolean; error?: string; requiresTenantSelection?: boolean; accounts?: TenantChoice[] }>;
+  login: (email: string, password: string, tenantId?: string, remember?: boolean) => Promise<{ success: boolean; role?: UserRole; error?: string; requiresTenantSelection?: boolean; accounts?: TenantChoice[] }>;
+  acceptToken: (token: string) => Promise<UserRole>;
   logout: () => void;
 }
-
-const TOKEN_KEY = "81cc_session_token";
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [ready, setReady] = useState(false);
+  const [sessionError, setSessionError] = useState("");
+  const [retry, setRetry] = useState(0);
 
   useEffect(() => {
     const hydrateSession = async () => {
@@ -34,21 +35,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         const session = await fetchSession(storedToken);
         setUser(session.user);
-      } catch {
-        localStorage.removeItem(TOKEN_KEY);
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 401) {
+          clearStoredStaffToken();
+        } else {
+          setSessionError("No se pudo verificar tu sesión. Comprobá la conexión y volvé a intentar.");
+        }
       } finally {
         setReady(true);
       }
     };
 
     void hydrateSession();
-  }, []);
+  }, [retry]);
 
   const login = async (
     email: string,
     password: string,
     tenantId?: string,
-  ): Promise<{ success: boolean; error?: string; requiresTenantSelection?: boolean; accounts?: TenantChoice[] }> => {
+    remember = true,
+  ): Promise<{ success: boolean; role?: UserRole; error?: string; requiresTenantSelection?: boolean; accounts?: TenantChoice[] }> => {
     try {
       const session = await loginWithCredentials(email, password, tenantId);
       if ("requiresTenantSelection" in session && session.requiresTenantSelection) {
@@ -59,10 +65,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         };
       }
       if ("user" in session && "token" in session) {
+        setStoredStaffToken(session.token, remember);
         setUser(session.user);
-        localStorage.setItem(TOKEN_KEY, session.token);
+        return { success: true, role: session.user.role };
       }
-      return { success: true };
+      return { success: false, error: "El servidor no devolvió una sesión válida." };
     } catch (error) {
       return {
         success: false,
@@ -71,12 +78,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const acceptToken = useCallback(async (token: string) => {
+    const session = await fetchSession(token);
+    setStoredStaffToken(token);
+    setUser(session.user);
+    return session.user.role;
+  }, []);
+
   const logout = () => {
     setUser(null);
-    localStorage.removeItem(TOKEN_KEY);
+    clearStoredStaffToken();
   };
 
-  if (!ready) return null;
+  if (!ready || sessionError) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background p-6 text-foreground" role="status">
+        <div className="max-w-md text-center">
+          <p>{sessionError || "Verificando sesión…"}</p>
+          {sessionError && <button className="mt-4 rounded-xl bg-[#FFE707] px-4 py-2 font-semibold text-[#190B47]" onClick={() => { setSessionError(""); setReady(false); setRetry((value) => value + 1); }}>Reintentar</button>}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <AuthContext.Provider
@@ -85,6 +108,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isAuthenticated: !!user,
         isReady: ready,
         login,
+        acceptToken,
         logout,
       }}
     >

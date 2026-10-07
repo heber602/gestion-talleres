@@ -128,7 +128,7 @@ export default function OrdenesPage() {
     try {
       setSaving(true);
       const updated = await updateWorkOrder(token, selectedOrder.id, {
-        diagnostic: orderForm.diagnostic || undefined,
+        diagnostic: orderForm.diagnostic,
         laborCost: orderForm.laborCost ? Number(orderForm.laborCost) : 0,
         totalCost: orderForm.totalCost ? Number(orderForm.totalCost) : 0,
         recommendedNextRevisionDate: orderForm.recommendedNextRevisionDate || null,
@@ -333,8 +333,8 @@ export default function OrdenesPage() {
 
       {isEditorOpen && selectedOrder && (
         <>
-          <div className="fixed inset-0 z-40 bg-gray-900/30 backdrop-blur-sm" onClick={() => setIsEditorOpen(false)} />
-          <div className="fixed right-0 top-0 z-50 flex h-full w-full max-w-2xl flex-col bg-white shadow-2xl">
+          <div className="fixed inset-0 z-[70] bg-gray-900/30 backdrop-blur-sm" onClick={() => setIsEditorOpen(false)} />
+          <div role="dialog" aria-modal="true" aria-label="Editar orden" className="fixed right-0 top-0 z-[80] flex h-[100dvh] w-full max-w-2xl flex-col bg-white shadow-2xl">
             <div className="border-b border-gray-100 px-6 py-5">
               <div className="flex items-start justify-between gap-4">
                 <div>
@@ -354,7 +354,8 @@ export default function OrdenesPage() {
               </div>
             </div>
 
-            <div className="grid flex-1 gap-0 overflow-hidden lg:grid-cols-[1.1fr_0.9fr]">
+            {error && <p role="alert" className="mx-6 mt-3 rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
+            <div className="grid min-h-0 flex-1 gap-0 overflow-y-auto lg:grid-cols-[1.1fr_0.9fr] lg:overflow-hidden">
               <form onSubmit={handleOrderSave} className="overflow-y-auto border-r border-gray-100 p-6">
                 <div className="space-y-6">
                   <label className="block text-sm font-bold text-gray-700">

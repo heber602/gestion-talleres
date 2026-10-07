@@ -10,6 +10,12 @@ import { LocaleSwitcher } from "@/components/LocaleSwitcher";
 function getNavItems(t: ReturnType<typeof useI18n>["t"]) {
   return [
   {
+    href: "/superadmin",
+    label: t("shell", "superAdmin"),
+    roles: ["superadmin"] as UserRole[],
+    icon: <span aria-hidden="true">81cc</span>,
+  },
+  {
     href: "/",
     label: t("shell", "dashboard"),
     roles: ["owner", "employee"] as UserRole[],
@@ -233,7 +239,8 @@ function Sidebar() {
 
 function MobileNav() {
   const pathname = usePathname();
-  const { user } = useAuth();
+  const router = useRouter();
+  const { user, logout } = useAuth();
   const { t } = useI18n();
   const navItems = getNavItems(t);
 
@@ -256,6 +263,9 @@ function MobileNav() {
           </Link>
         );
       })}
+      <button type="button" onClick={() => { logout(); router.replace("/login"); }} className="min-w-[82px] shrink-0 rounded-xl px-2 py-2 text-xs font-semibold text-white hover:bg-white/10">
+        {t("shell", "logout")}
+      </button>
     </nav>
   );
 }
@@ -296,7 +306,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    if (isAuthenticated && user?.role === "superadmin" && !isSuperAdminPage && !isLabPage) {
+    if (isAuthenticated && user?.role === "superadmin" && !isSuperAdminPage && !isLabPage && pathname !== "/sesiones") {
       router.replace("/superadmin");
     }
   }, [
@@ -311,6 +321,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     isSuperAdminPage,
     isTeamInvitePage,
     router,
+    pathname,
     user,
   ]);
 

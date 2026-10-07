@@ -1,18 +1,40 @@
+# Entorno remoto de prueba: aplicación completa, sin cuentas demo ni datos locales.
 services:
   - type: web
-    name: gestion-talleres-backend
+    name: app-81cc-preview
     runtime: node
+    region: oregon
     plan: free
-    # Migraciones en build (seguro), arranque limpio sin prisma
-    buildCommand: cd backend && npm ci --include=dev && npx prisma generate && npx prisma migrate deploy && npm run build
-    startCommand: cd backend && node dist/main
+    buildCommand: npm --prefix backend ci --include=dev && npm --prefix frontend ci --include=dev && npm --prefix backend run prisma:generate && npm --prefix backend run prisma:migrate && npm --prefix backend run build && npm --prefix frontend run build
+    startCommand: node deploy/start.cjs
+    healthCheckPath: /api
+    autoDeployTrigger: "off"
     envVars:
-      # ⚠️ Configurar estos valores manualmente en el Dashboard de Render
+      - key: NODE_VERSION
+        value: "22"
+      - key: NODE_ENV
+        value: production
+      - key: NEXT_PUBLIC_API_BASE_URL
+        value: /api
+      - key: API_INTERNAL_URL
+        value: http://127.0.0.1:3000
+      - key: SEED_DEMO_DATA
+        value: "false"
       - key: DATABASE_URL
-        sync: false
+        fromDatabase:
+          name: db-81cc-preview
+          property: connectionString
       - key: DIRECT_URL
-        sync: false
-      - key: PORT
-        value: "3000"
-      - key: FRONTEND_ORIGIN
-        sync: false
+        fromDatabase:
+          name: db-81cc-preview
+          property: connectionString
+      - key: BOOTSTRAP_ADMIN_EMAIL
+        value: herber.superadmin@81cc.app
+      - key: BOOTSTRAP_ADMIN_PASSWORD
+        generateValue: true
+databases:
+  - name: db-81cc-preview
+    region: oregon
+    plan: free
+    databaseName: app81cc
+    ipAllowList: []

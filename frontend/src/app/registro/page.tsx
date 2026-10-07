@@ -36,7 +36,7 @@ export default function RegistroPage() {
     <div className="flex min-h-screen items-center justify-center bg-gray-950 p-6">
       <div className="w-full max-w-md rounded-3xl border border-gray-800 bg-gray-900 p-8">
         <h1 className="mb-2 text-3xl font-extrabold text-white">Crear cuenta de taller</h1>
-        <p className="mb-8 text-sm text-gray-400">Alta real en SQL dentro de 81cc para el dueño del taller.</p>
+        <p className="mb-8 text-sm text-gray-400">Creá tu taller y su cuenta de administración en 81cc.</p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {[
@@ -46,9 +46,12 @@ export default function RegistroPage() {
             ["password", "Contraseña"],
           ].map(([key, label]) => (
             <div key={key}>
-              <label className="mb-1 block text-sm font-semibold text-gray-300">{label}</label>
+              <label htmlFor={`register-${key}`} className="mb-1 block text-sm font-semibold text-gray-300">{label}</label>
               <input
-                type={key === "password" ? "password" : "text"}
+                id={`register-${key}`}
+                type={key === "password" ? "password" : key === "email" ? "email" : "text"}
+                required
+                minLength={key === "password" ? 6 : undefined}
                 value={form[key as keyof typeof form]}
                 onChange={(event) => setForm((current) => ({ ...current, [key]: event.target.value }))}
                 className="w-full rounded-xl border border-gray-700 bg-gray-950 px-4 py-3 text-white outline-none transition focus:border-blue-500"

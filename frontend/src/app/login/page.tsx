@@ -14,7 +14,7 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export default function LoginPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { login } = useAuth();
+  const { login, acceptToken } = useAuth();
   const { t } = useI18n();
   const googleErrorParam = searchParams.get("googleError");
 
@@ -39,17 +39,14 @@ export default function LoginPage() {
 
   useEffect(() => {
     const googleToken = searchParams.get("googleToken");
-    const googleRole = searchParams.get("googleRole");
-
     if (!googleToken) return;
-
-    localStorage.setItem("81cc_session_token", googleToken);
-
-    const destination = googleRole === "superadmin" ? "/superadmin" : "/";
-    setTimeout(() => {
-      router.replace(destination);
-    }, 280);
-  }, [router, searchParams]);
+    void acceptToken(googleToken).then((role) => {
+      router.replace(role === "superadmin" ? "/superadmin" : "/");
+    }).catch(() => {
+      router.replace("/login");
+      setErrorMessage("No se pudo verificar el acceso con Google. Volvé a intentar.");
+    });
+  }, [acceptToken, router, searchParams]);
 
   const emailError = useMemo(() => {
     if (!touched.email) return "";
@@ -61,13 +58,12 @@ export default function LoginPage() {
   const passwordError = useMemo(() => {
     if (!touched.password) return "";
     if (!password.trim()) return t("login", "passwordRequired");
-    if (password.length < 6) return t("login", "passwordLength");
     return "";
   }, [password, touched.password, t]);
 
   const isFormValid =
     EMAIL_REGEX.test(email.trim()) &&
-    password.trim().length >= 6 &&
+    password.length > 0 &&
     !emailError &&
     !passwordError;
 
@@ -88,7 +84,7 @@ export default function LoginPage() {
     }
 
     setLoading(true);
-    const result = await login(email.trim(), password);
+    const result = await login(email.trim(), password, undefined, rememberMe);
     setLoading(false);
 
     if (result.requiresTenantSelection) {
@@ -97,12 +93,9 @@ export default function LoginPage() {
     }
 
     if (result.success) {
-      if (!rememberMe) {
-        localStorage.removeItem("81cc_session_token");
-      }
       setSuccessMessage(t("login", "loginSuccess"));
       setTimeout(() => {
-        redirectByRole(email.toLowerCase().trim() === "herber.superadmin@81cc.app" ? "superadmin" : "owner");
+        redirectByRole(result.role ?? "owner");
       }, 260);
       return;
     }
@@ -114,12 +107,12 @@ export default function LoginPage() {
     setLoading(true);
     setErrorMessage("");
     setSuccessMessage("");
-    const result = await login(email.trim(), password, tenantId);
+    const result = await login(email.trim(), password, tenantId, rememberMe);
     setLoading(false);
 
     if (result.success) {
       setSuccessMessage(t("login", "sessionStarted"));
-      setTimeout(() => redirectByRole("owner"), 260);
+      setTimeout(() => redirectByRole(result.role ?? "owner"), 260);
       return;
     }
 
@@ -158,7 +151,7 @@ export default function LoginPage() {
   return (
     <main className="min-h-screen bg-[#190B47] px-4 py-6 text-[#FFFFFF] sm:px-6 lg:px-8">
       <div className="mx-auto grid max-w-7xl gap-5 lg:grid-cols-5">
-        <section className="login-fade-in relative order-1 overflow-hidden rounded-2xl border border-white/10 bg-[linear-gradient(140deg,#190B47_0%,#2400A2_78%,#190B47_100%)] p-6 text-white shadow-[0_24px_70px_rgba(3,1,18,0.35)] lg:order-2 lg:col-span-3 lg:p-8">
+        <section className="login-fade-in relative order-2 overflow-hidden rounded-2xl border border-white/10 bg-[linear-gradient(140deg,#190B47_0%,#2400A2_78%,#190B47_100%)] p-6 text-white shadow-[0_24px_70px_rgba(3,1,18,0.35)] lg:order-2 lg:col-span-3 lg:p-8">
           <div className="pointer-events-none absolute -right-16 top-10 h-56 w-56 rounded-full bg-[#FFE707]/15 blur-3xl" />
           <div className="pointer-events-none absolute -bottom-16 left-8 h-56 w-56 rounded-full bg-white/10 blur-3xl" />
 
@@ -196,17 +189,13 @@ export default function LoginPage() {
             </div>
           </div>
 
-          <blockquote className="mt-6 rounded-xl border border-[#474211] bg-[#474211]/15 p-4 text-sm leading-relaxed text-white">
-            {t("login", "testimonial")}
-          </blockquote>
-
           <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-4 py-2 text-xs font-semibold text-white">
             <span className="inline-block h-2 w-2 rounded-full bg-[#FFE707]" aria-hidden="true" />
             {t("login", "encryptedData")}
           </div>
         </section>
 
-        <section className="login-fade-in order-2 rounded-2xl border border-white/15 bg-[#2400A2] p-6 shadow-[0_18px_55px_rgba(3,1,18,0.35)] lg:order-1 lg:col-span-2 lg:p-8">
+        <section className="login-fade-in order-1 rounded-2xl border border-white/15 bg-[#2400A2] p-6 shadow-[0_18px_55px_rgba(3,1,18,0.35)] lg:order-1 lg:col-span-2 lg:p-8">
           <div className="flex items-center justify-between gap-3">
             <Link href="/" className="inline-flex items-center text-2xl font-bold tracking-tight text-white">
               <span className="logo-pulse">81</span>

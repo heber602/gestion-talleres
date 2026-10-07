@@ -41,6 +41,7 @@ export interface DashboardResponse {
     id: string;
     vehicleLabel: string;
     plate: string;
+    date: string;
     time: string;
     reason: string;
     status: string;
@@ -80,6 +81,18 @@ export interface VehicleHistoryResponse {
     phone: string | null;
     email: string | null;
   };
+  ownershipTransfers?: Array<{
+    id: string;
+    fromClientName: string;
+    toClientName: string;
+    performedByName: string;
+    note: string | null;
+    createdAt: string;
+    previousProfile?: {
+      alias: string | null; color: string | null; notes: string | null;
+      insuranceProvider: string | null; policyNumber: string | null;
+    } | null;
+  }>;
   profile: {
     alias: string | null;
     color: string | null;
@@ -482,19 +495,27 @@ export interface OwnerAccountStatus {
 
 export const API_BASE_URL =
   (process.env.NEXT_PUBLIC_API_BASE_URL || process.env.NEXT_PUBLIC_API_URL)?.replace(/\/$/, "") ??
-  "http://localhost:3000";
+  (process.env.NODE_ENV === "production" ? "/api" : "http://localhost:3000");
 
 const STAFF_TOKEN_KEY = "81cc_session_token";
 export const CLIENT_TOKEN_KEY = "81cc_client_session_token";
 
+export class ApiError extends Error {
+  constructor(message: string, public readonly status: number) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
 async function parseResponse<T>(response: Response): Promise<T> {
   const body = (await response.json().catch(() => null)) as
-    | { message?: string }
+    | { message?: string | string[] }
     | null;
 
   if (!response.ok) {
     console.error(`[API Error] ${response.status} ${response.statusText}`, body);
-    throw new Error(body?.message ?? "No se pudo completar la solicitud.");
+    const message = Array.isArray(body?.message) ? body.message.join(". ") : body?.message;
+    throw new ApiError(message ?? "No se pudo completar la solicitud.", response.status);
   }
 
   return body as T;
@@ -538,7 +559,17 @@ async function authorizedPost<T>(path: string, token: string, body: unknown): Pr
 
 export function getStoredStaffToken() {
   if (typeof window === "undefined") return null;
-  return localStorage.getItem(STAFF_TOKEN_KEY);
+  return sessionStorage.getItem(STAFF_TOKEN_KEY) ?? localStorage.getItem(STAFF_TOKEN_KEY);
+}
+
+export function setStoredStaffToken(token: string, remember = true) {
+  clearStoredStaffToken();
+  (remember ? localStorage : sessionStorage).setItem(STAFF_TOKEN_KEY, token);
+}
+
+export function clearStoredStaffToken() {
+  localStorage.removeItem(STAFF_TOKEN_KEY);
+  sessionStorage.removeItem(STAFF_TOKEN_KEY);
 }
 
 export function getStoredClientToken() {
@@ -606,7 +637,7 @@ export async function fetchStaffInvites(token: string) {
 
 export async function createStaffInvite(
   token: string,
-  input: { name: string; email: string; role: "employee" | "superadmin" },
+  input: { name: string; email: string; role: "employee" },
 ) {
   return authorizedPost<{ ok: boolean; inviteToken: string; expiresAt: number }>(
     "/auth/staff/invites",
@@ -826,6 +857,16 @@ export async function createIntake(
 
 export async function fetchVehicleHistory(token: string, vehicleId: string) {
   return authorizedGet<VehicleHistoryResponse>(`/vehicles/${vehicleId}/history`, token);
+}
+
+export async function transferVehicle(
+  token: string,
+  vehicleId: string,
+  input: { clientId: string; expectedClientId: string; note?: string },
+) {
+  return authorizedPost<{ ok: boolean; vehicleId: string; client: { id: string; name: string } }>(
+    `/vehicles/${vehicleId}/transfer`, token, input,
+  );
 }
 
 export async function fetchSessions(token: string) {

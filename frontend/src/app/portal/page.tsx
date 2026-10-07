@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   addClientPortalVehicle,
+  ApiError,
   clearStoredClientToken,
   fetchClientPortal,
   getStoredClientToken,
@@ -88,9 +89,12 @@ export default function PortalPage() {
   useEffect(() => {
     const token = getStoredClientToken();
     if (!token) return;
-    void loadPortal(token).catch(() => {
-      clearStoredClientToken();
-      setPortal(null);
+    setLoading(true);
+    void loadPortal(token).catch((loadError) => {
+      if (loadError instanceof ApiError && loadError.status === 401) clearStoredClientToken();
+      setError(loadError instanceof Error ? loadError.message : "No se pudo cargar el portal. Volvé a intentar.");
+    }).finally(() => {
+      setLoading(false);
     });
   }, []);
 
@@ -467,7 +471,7 @@ function MiniInfo({ label, value }: { label: string; value: string }) {
 }
 
 function PortalInput({ value, onChange, placeholder, type = "text" }: { value: string; onChange: (value: string) => void; placeholder: string; type?: string; }) {
-  return <input type={type} placeholder={placeholder} value={value} onChange={(event) => onChange(event.target.value)} className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 outline-none transition focus:border-blue-500" />;
+  return <input aria-label={placeholder} type={type} placeholder={placeholder} value={value} minLength={type === "password" ? 6 : undefined} onChange={(event) => onChange(event.target.value)} className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 outline-none transition focus:border-blue-500" />;
 }
 
 function getCurrentWorkOrder(vehicle: VehicleHistoryResponse) {

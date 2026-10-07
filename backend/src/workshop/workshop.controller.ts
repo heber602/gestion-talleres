@@ -1,6 +1,23 @@
-import { Body, Controller, Get, Headers, Param, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Headers,
+  Param,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { AuthService } from '../auth/auth.service';
 import { WorkshopService } from './workshop.service';
+import {
+  IntakeDto,
+  VehicleDto,
+  MoveBoardItemDto,
+  InventoryItemDto,
+  WorkOrderPartDto,
+  UpdateWorkOrderDto,
+  TransferVehicleDto,
+} from './workshop.dto';
 
 @Controller()
 export class WorkshopController {
@@ -10,14 +27,14 @@ export class WorkshopController {
   ) {}
 
   @Get('dashboard/summary')
-  async dashboard(@Headers('authorization') authorization?: string) {
+  async dashboard(@Headers('authorization') authorization: string | undefined) {
     const user = await this.authService.requireSession(authorization, 'staff');
     return this.workshopService.getDashboardSummary(user);
   }
 
   @Get('clients')
   async clients(
-    @Headers('authorization') authorization?: string,
+    @Headers('authorization') authorization: string | undefined,
     @Query('search') search?: string,
   ) {
     const user = await this.authService.requireSession(authorization, 'staff');
@@ -26,20 +43,9 @@ export class WorkshopController {
 
   @Post('clients/intake')
   async intake(
-    @Headers('authorization') authorization?: string,
+    @Headers('authorization') authorization: string | undefined,
     @Body()
-    body?: {
-      clientName: string;
-      phone?: string;
-      email?: string;
-      plate: string;
-      brand: string;
-      model: string;
-      year?: number;
-      reason: string;
-      date: string;
-      time: string;
-    },
+    body: IntakeDto,
   ) {
     const user = await this.authService.requireSession(authorization, 'staff');
     return this.workshopService.createIntake(user, body!);
@@ -47,7 +53,7 @@ export class WorkshopController {
 
   @Get('vehicles/:vehicleId/history')
   async vehicleHistory(
-    @Headers('authorization') authorization?: string,
+    @Headers('authorization') authorization: string | undefined,
     @Param('vehicleId') vehicleId?: string,
   ) {
     const user = await this.authService.requireSession(authorization);
@@ -55,27 +61,34 @@ export class WorkshopController {
   }
 
   @Get('sessions')
-  async sessions(@Headers('authorization') authorization?: string) {
+  async sessions(@Headers('authorization') authorization: string | undefined) {
     const user = await this.authService.requireSession(authorization, 'staff');
     return this.authService.listSessions(user);
   }
 
+  @Post('vehicles/:vehicleId/transfer')
+  async transferVehicle(
+    @Headers('authorization') authorization: string | undefined,
+    @Param('vehicleId') vehicleId: string,
+    @Body() body: TransferVehicleDto,
+  ) {
+    const user = await this.authService.requireSession(authorization, 'staff');
+    return this.workshopService.transferVehicle(user, vehicleId, body);
+  }
+
   @Get('client-portal/me')
-  async clientPortal(@Headers('authorization') authorization?: string) {
+  async clientPortal(
+    @Headers('authorization') authorization: string | undefined,
+  ) {
     const user = await this.authService.requireSession(authorization, 'client');
     return this.workshopService.getClientPortal(user);
   }
 
   @Post('client-portal/vehicles')
   async addClientPortalVehicle(
-    @Headers('authorization') authorization?: string,
+    @Headers('authorization') authorization: string | undefined,
     @Body()
-    body?: {
-      plate: string;
-      brand: string;
-      model: string;
-      year?: number;
-    },
+    body: VehicleDto,
   ) {
     const user = await this.authService.requireSession(authorization, 'client');
     return this.workshopService.addVehicleToClientPortal(user, body!);
@@ -83,7 +96,7 @@ export class WorkshopController {
 
   @Post('client-portal/vehicles/:vehicleId/profile')
   async updateClientPortalVehicleProfile(
-    @Headers('authorization') authorization?: string,
+    @Headers('authorization') authorization: string | undefined,
     @Param('vehicleId') vehicleId?: string,
     @Body()
     body?: {
@@ -95,67 +108,67 @@ export class WorkshopController {
     },
   ) {
     const user = await this.authService.requireSession(authorization, 'client');
-    return this.workshopService.updateClientPortalVehicleProfile(user, vehicleId!, body ?? {});
+    return this.workshopService.updateClientPortalVehicleProfile(
+      user,
+      vehicleId!,
+      body ?? {},
+    );
   }
 
   @Get('appointments/board')
-  async appointmentsBoard(@Headers('authorization') authorization?: string) {
+  async appointmentsBoard(
+    @Headers('authorization') authorization: string | undefined,
+  ) {
     const user = await this.authService.requireSession(authorization, 'staff');
     return this.workshopService.getAppointmentsBoard(user);
   }
 
   @Post('appointments/board/move')
   async moveBoardItem(
-    @Headers('authorization') authorization?: string,
+    @Headers('authorization') authorization: string | undefined,
     @Body()
-    body?: {
-      itemId: string;
-      sourceColumn: 'agendados' | 'diagnostico' | 'reparacion' | 'listos';
-      targetColumn: 'diagnostico' | 'reparacion' | 'listos';
-    },
+    body: MoveBoardItemDto,
   ) {
     const user = await this.authService.requireSession(authorization, 'staff');
     return this.workshopService.moveBoardItem(user, body!);
   }
 
   @Get('work-orders')
-  async workOrders(@Headers('authorization') authorization?: string) {
+  async workOrders(
+    @Headers('authorization') authorization: string | undefined,
+  ) {
     const user = await this.authService.requireSession(authorization, 'staff');
     return this.workshopService.listWorkOrders(user);
   }
 
   @Get('staff/mechanics')
-  async mechanics(@Headers('authorization') authorization?: string) {
+  async mechanics(@Headers('authorization') authorization: string | undefined) {
     const user = await this.authService.requireSession(authorization, 'staff');
     return this.workshopService.listMechanics(user);
   }
 
   @Get('work-orders/:workOrderId')
   async workOrderDetail(
-    @Headers('authorization') authorization?: string,
-    @Param('workOrderId') workOrderId?: string,
+    @Headers('authorization') authorization: string | undefined,
+    @Param('workOrderId') workOrderId: string,
   ) {
     const user = await this.authService.requireSession(authorization, 'staff');
     return this.workshopService.getWorkOrderDetail(user, workOrderId!);
   }
 
   @Get('inventory/items')
-  async inventoryItems(@Headers('authorization') authorization?: string) {
+  async inventoryItems(
+    @Headers('authorization') authorization: string | undefined,
+  ) {
     const user = await this.authService.requireSession(authorization, 'staff');
     return this.workshopService.listInventoryItems(user);
   }
 
   @Post('inventory/items')
   async createInventoryItem(
-    @Headers('authorization') authorization?: string,
+    @Headers('authorization') authorization: string | undefined,
     @Body()
-    body?: {
-      name: string;
-      sku?: string;
-      stockQuantity?: number;
-      minAlert?: number;
-      price?: number;
-    },
+    body: InventoryItemDto,
   ) {
     const user = await this.authService.requireSession(authorization, 'staff');
     return this.workshopService.createInventoryItem(user, body!);
@@ -163,16 +176,10 @@ export class WorkshopController {
 
   @Post('work-orders/:workOrderId/parts')
   async addPartToWorkOrder(
-    @Headers('authorization') authorization?: string,
-    @Param('workOrderId') workOrderId?: string,
+    @Headers('authorization') authorization: string | undefined,
+    @Param('workOrderId') workOrderId: string,
     @Body()
-    body?: {
-      itemId: string;
-      quantity: number;
-      unitPrice: number;
-      internalCost: number;
-      providedByClient?: boolean;
-    },
+    body: WorkOrderPartDto,
   ) {
     const user = await this.authService.requireSession(authorization, 'staff');
     return this.workshopService.addPartToWorkOrder(user, workOrderId!, body!);
@@ -180,19 +187,10 @@ export class WorkshopController {
 
   @Post('work-orders/:workOrderId/update')
   async updateWorkOrder(
-    @Headers('authorization') authorization?: string,
-    @Param('workOrderId') workOrderId?: string,
+    @Headers('authorization') authorization: string | undefined,
+    @Param('workOrderId') workOrderId: string,
     @Body()
-    body?: {
-      diagnostic?: string;
-      laborCost?: number;
-      totalCost?: number;
-      recommendedNextRevisionDate?: string | null;
-      recommendedNextRevisionNote?: string | null;
-      mechanicId?: string | null;
-      clientUpdateTitle?: string;
-      clientUpdateMessage?: string;
-    },
+    body: UpdateWorkOrderDto,
   ) {
     const user = await this.authService.requireSession(authorization, 'staff');
     return this.workshopService.updateWorkOrder(user, workOrderId!, body ?? {});
@@ -200,7 +198,7 @@ export class WorkshopController {
 
   @Get('finances/summary')
   async financesSummary(
-    @Headers('authorization') authorization?: string,
+    @Headers('authorization') authorization: string | undefined,
     @Query('period') period?: 'dia' | 'semana' | 'mes' | 'anio',
   ) {
     const user = await this.authService.requireSession(authorization, 'staff');

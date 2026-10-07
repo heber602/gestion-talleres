@@ -34,11 +34,11 @@ export default function SesionesPage() {
   return (
     <div className="mx-auto max-w-6xl p-6 md:p-10">
       <h1 className="mb-2 text-3xl font-extrabold tracking-tight text-gray-900">Registro de sesiones</h1>
-      <p className="mb-8 font-medium text-gray-500">Actividad persistida en SQL para usuarios del taller y clientes.</p>
+      <p className="mb-8 font-medium text-gray-500">Últimos accesos de usuarios del taller y clientes.</p>
 
       {error && <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
 
-      <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
+      <div className="overflow-x-auto rounded-2xl border border-gray-100 bg-white shadow-sm">
         <table className="w-full text-left">
           <thead>
             <tr className="border-b border-gray-100 bg-gray-50 text-sm font-semibold text-gray-500">
